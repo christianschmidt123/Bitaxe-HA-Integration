@@ -1,4 +1,5 @@
 import logging
+import time
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import (
@@ -11,6 +12,7 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfTime,
     UnitOfInformation,
+    UnitOfEnergy,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,6 +21,7 @@ DOMAIN = "bitaxe"
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
+    "energy": "Total Energy Consumed",  # NEU: Der berechnete Energiezähler für das Dashboard
     "voltage": "Input Voltage",
     "current": "Input Current",
     "temp": "Temperature ASIC",
@@ -55,6 +58,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
     device_name = entry.data.get("device_name", "BitAxe Miner")
 
     _LOGGER.debug(f"Setting up all sensors for device: {device_name}")
+
+    # Speicher für die Energieberechnung an die Coordinator-Instanz hängen, falls noch nicht vorhanden
+    if not hasattr(coordinator, "_last_energy_calc_time"):
+        coordinator._last_energy_calc_time = time.time()
+        coordinator._total_energy_wh = 0.0
 
     sensors = [
         BitAxeSensor(coordinator, sensor_type, device_name, entry)
@@ -96,39 +104,50 @@ class BitAxeSensor(SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor with noise reduction."""
-        value = self.coordinator.data.get(self.sensor_type, None)
+        
+        # Sonderlogik für unseren selbstberechneten Energiewert
+        if self.sensor_type == "energy":
+            current_power = self.coordinator.data.get("power", None)
+            if current_power is not None:
+                now = time.time()
+                time_delta = now - self.coordinator._last_energy_calc_time
+                
+                # Berechnung: Watt * Stunden = Wattstunden (Wh)
+                if time_delta > 0:
+                    hours = time_delta / 3600.0
+                    added_energy = float(current_power) * hours
+                    self.coordinator._total_energy_wh += added_energy
+                
+                self.coordinator._last_energy_calc_time = now
+            
+            # Rückgabe in Wattstunden (Wh), auf 2 Nachkommastellen gerundet
+            return round(self.coordinator._total_energy_wh, 2)
 
+        value = self.coordinator.data.get(self.sensor_type, None)
         if value is None:
             return None
 
-        # 1. Rauschunterdrückung für den RAM (Konvertierung in MB, gerundet)
         if self.sensor_type == "freeHeap":
             return round(float(value) / (1024 * 1024), 2)
 
-        # 2. Schwierigkeitsgrade als reine Zahlen ausgeben (HA formatiert das k, M, G im Dashboard selbst!)
         if self.sensor_type in ["bestDiff", "bestSessionDiff", "poolDifficulty"]:
             try:
                 return int(float(value))
             except (ValueError, TypeError):
                 return value
 
-        # 3. Uptime lesbar halten
         if self.sensor_type == "uptimeSeconds":
             return self._format_uptime(value)
 
-        # 4. Beruhigung von Leistung und Lüftern (1 Dezimalstelle reicht)
         if self.sensor_type in ["power", "fanspeed", "cpuUsage"]:
             return round(float(value), 1)
 
-        # 5. Spannungen von mV in V umrechnen
         if self.sensor_type in ["voltage", "coreVoltageActual"]:
             return round(float(value) / 1000.0, 2) if float(value) > 100 else round(float(value), 2)
 
-        # 6. Stromstärke von mA in A umrechnen
         if self.sensor_type == "current":
             return round(float(value) / 1000.0, 2)
 
-        # 7. Hashrates glätten
         if self.sensor_type in ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]:
             return round(float(value), 1)
 
@@ -146,11 +165,17 @@ class BitAxeSensor(SensorEntity):
 
     def _set_device_and_state_classes(self):
         """Assign native Home Assistant Device and State Classes."""
-        # Standard Zuweisungen für Diagramme und Statistik-Minderung
         if self.sensor_type == "power":
             self._attr_device_class = SensorDeviceClass.POWER
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfPower.WATT
+            
+        elif self.sensor_type == "energy":
+            # NEU: Exakte Konfiguration für das Energie-Dashboard
+            self._attr_device_class = SensorDeviceClass.ENERGY
+            self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+            self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+
         elif self.sensor_type in ["voltage", "coreVoltageActual"]:
             self._attr_device_class = SensorDeviceClass.VOLTAGE
             self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -176,14 +201,10 @@ class BitAxeSensor(SensorEntity):
         elif self.sensor_type in ["responseTime", "processTime"]:
             self._attr_device_class = SensorDeviceClass.DURATION
             self._attr_native_unit_of_measurement = UnitOfTime.MILLISECONDS
-        
-        # Speicher korrigiert auf Megabytes (reduziert Log-Spam enorm)
         elif self.sensor_type == "freeHeap":
             self._attr_device_class = SensorDeviceClass.DATA_SIZE
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
-
-        # Hashrates & Frequenzen
         elif self.sensor_type in ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]:
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = "GH/s"
@@ -194,14 +215,14 @@ class BitAxeSensor(SensorEntity):
         elif self.sensor_type in ["fanrpm", "fan2rpm"]:
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = "RPM"
-        
-        # Shares steigen immer weiter an
         elif self.sensor_type in ["sharesAccepted", "sharesRejected"]:
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     def _get_icon(self, sensor_type):
         """Select crisp Material Design Icons for the entities."""
-        if sensor_type == "bestSessionDiff":
+        if sensor_type == "energy":
+            return "mdi:lightning-bolt"
+        elif sensor_type == "bestSessionDiff":
             return "mdi:star"
         elif sensor_type in ["bestDiff", "poolDifficulty"]:
             return "mdi:trophy"
