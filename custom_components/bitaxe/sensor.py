@@ -33,7 +33,7 @@ SI_PREFIXES = {
 }
 GH_TO_H_MULTIPLIER = 1_000_000_000
 UPTIME_PATTERN = re.compile(
-    r"(?=.*\d)\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*"
+    r"^\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$"
 )
 
 SENSOR_NAME_MAP = {
@@ -199,7 +199,7 @@ class BitAxeSensor(SensorEntity):
                 pass
 
             match = UPTIME_PATTERN.fullmatch(stripped)
-            if match:
+            if match and any(group is not None for group in match.groups()):
                 days, hours, minutes, seconds = (int(group or 0) for group in match.groups())
                 return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
