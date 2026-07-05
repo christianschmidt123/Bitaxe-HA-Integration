@@ -87,6 +87,8 @@ The integration creates one device with the following sensors:
 - Hashrate values from the Bitaxe API are normalized and shown with readable SI prefixes.
 - Difficulty values are also normalized with SI prefixes for large ranges.
 - Entity names stay unchanged, so existing dashboards/automations continue to reference the same entities.
+- Unit prefixes update automatically when values cross SI thresholds (for example MH/s -> GH/s).
+- If you rely on fixed units in templates/automations, normalize values first or compare raw thresholds carefully.
 
 ## Energy Dashboard
 
