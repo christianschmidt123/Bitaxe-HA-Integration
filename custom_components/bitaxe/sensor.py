@@ -196,12 +196,12 @@ class BitAxeSensor(SensorEntity):
                 pass
 
             match = re.fullmatch(
-                r"(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?",
+                r"(?=.*\d)\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*",
                 stripped,
             )
             if match and any(group is not None for group in match.groups()):
-                days, hours, minutes, sec_component = (int(group or 0) for group in match.groups())
-                return days * 86400 + hours * 3600 + minutes * 60 + sec_component
+                days, hours, minutes, seconds = (int(group or 0) for group in match.groups())
+                return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
         return None
 
