@@ -32,6 +32,9 @@ SI_PREFIXES = {
     5: "P",
 }
 GH_TO_H_MULTIPLIER = 1_000_000_000
+UPTIME_PATTERN = re.compile(
+    r"(?=.*\d)\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*"
+)
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
@@ -195,11 +198,8 @@ class BitAxeSensor(SensorEntity):
             except ValueError:
                 pass
 
-            match = re.fullmatch(
-                r"(?=.*\d)\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*",
-                stripped,
-            )
-            if match and any(group is not None for group in match.groups()):
+            match = UPTIME_PATTERN.fullmatch(stripped)
+            if match:
                 days, hours, minutes, seconds = (int(group or 0) for group in match.groups())
                 return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
