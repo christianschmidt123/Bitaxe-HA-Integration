@@ -187,6 +187,9 @@ class BitAxeSensor(SensorEntity):
 
         if isinstance(value, str):
             stripped = value.strip()
+            if not stripped:
+                return None
+
             try:
                 return int(float(stripped))
             except ValueError:
@@ -197,8 +200,8 @@ class BitAxeSensor(SensorEntity):
                 stripped,
             )
             if match and any(group is not None for group in match.groups()):
-                days, hours, minutes, seconds = (int(group or 0) for group in match.groups())
-                return days * 86400 + hours * 3600 + minutes * 60 + seconds
+                days, hours, minutes, sec_component = (int(group or 0) for group in match.groups())
+                return days * 86400 + hours * 3600 + minutes * 60 + sec_component
 
         return None
 
