@@ -88,7 +88,7 @@ The integration creates one device with the following sensors:
 - Difficulty values are also normalized with SI prefixes for large ranges.
 - Entity names stay unchanged, so existing dashboards/automations continue to reference the same entities.
 - Unit prefixes update automatically when values cross SI thresholds (for example MH/s -> GH/s).
-- If you rely on fixed units in templates/automations, normalize values first or compare raw thresholds carefully.
+- If you rely on fixed units in templates/automations, normalize values first or compare raw thresholds carefully (for example, convert to H/s before comparing).
 
 ## Energy Dashboard
 

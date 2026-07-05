@@ -258,6 +258,7 @@ class BitAxeSensor(SensorEntity):
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         elif self.sensor_type in HASHRATE_SENSOR_TYPES:
+            self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = "H/s"
         elif self.sensor_type == "actualFrequency":
             self._attr_device_class = SensorDeviceClass.FREQUENCY
