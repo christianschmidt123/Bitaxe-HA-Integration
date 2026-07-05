@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -31,6 +32,9 @@ SI_PREFIXES = {
     5: "P",
 }
 GH_TO_H_MULTIPLIER = 1_000_000_000
+UPTIME_PATTERN = re.compile(
+    r"^\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$"
+)
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
@@ -152,7 +156,7 @@ class BitAxeSensor(SensorEntity):
                 return value
 
         if self.sensor_type == "uptimeSeconds":
-            return self._format_uptime(value)
+            return self._parse_uptime_to_seconds(value)
 
         if self.sensor_type in ["power", "fanspeed", "cpuUsage"]:
             return round(float(value), 1)
@@ -180,11 +184,26 @@ class BitAxeSensor(SensorEntity):
         return value
 
     @staticmethod
-    def _format_uptime(seconds):
-        days, remainder = divmod(int(seconds), 86400)
-        hours, remainder = divmod(remainder, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{days}d {hours}h {minutes}m {seconds}s"
+    def _parse_uptime_to_seconds(value):
+        if isinstance(value, (int, float)):
+            return int(value)
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+
+            try:
+                return int(float(stripped))
+            except ValueError:
+                pass
+
+            match = UPTIME_PATTERN.fullmatch(stripped)
+            if match and any(group is not None for group in match.groups()):
+                days, hours, minutes, seconds = (int(group or 0) for group in match.groups())
+                return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+        return None
 
     @staticmethod
     def _format_with_si_prefix(value: float, base_unit: str = ""):

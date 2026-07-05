@@ -76,7 +76,7 @@ The integration creates one device with the following sensors:
 | Pool Difficulty | Current pool difficulty | Dynamic SI `D` scaling |
 | Pool Response Time | Pool response time | ms |
 | Pool Process Time | Pool processing time | ms |
-| Uptime | Device uptime | formatted text (`Xd Xh Xm Xs`) |
+| Uptime | Device uptime | s (`device_class: duration`) |
 | Wi-Fi RSSI | Wi-Fi signal strength | dBm |
 | Free Heap Memory | Free heap memory | MB |
 | CPU Usage | CPU usage | % |
