@@ -30,6 +30,7 @@ SI_PREFIXES = {
     4: "T",
     5: "P",
 }
+GH_TO_H_MULTIPLIER = 1_000_000_000
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
@@ -165,7 +166,9 @@ class BitAxeSensor(SensorEntity):
         if self.sensor_type in HASHRATE_SENSOR_TYPES:
             try:
                 # Bitaxe API values are in GH/s. Convert to H/s before SI scaling.
-                scaled_value, unit = BitAxeSensor._format_with_si_prefix(float(value) * 1_000_000_000, base_unit="H/s")
+                scaled_value, unit = BitAxeSensor._format_with_si_prefix(
+                    float(value) * GH_TO_H_MULTIPLIER, base_unit="H/s"
+                )
                 self._attr_native_unit_of_measurement = unit
                 return scaled_value
             except (ValueError, TypeError):
