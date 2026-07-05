@@ -90,6 +90,17 @@ The integration creates one device with the following sensors:
 - Unit prefixes update automatically when values cross SI thresholds (for example MH/s -> GH/s).
 - If you rely on fixed units in templates/automations, normalize values first or compare raw thresholds carefully (for example, convert to H/s before comparing).
 
+Example template snippet (unit-aware hashrate conversion to H/s):
+```jinja2
+{% set value = states('sensor.hash_rate') | float(0) %}
+{% set unit = state_attr('sensor.hash_rate', 'unit_of_measurement') %}
+{% set factor = {
+  'mH/s': 1e-3, 'H/s': 1, 'kH/s': 1e3, 'MH/s': 1e6,
+  'GH/s': 1e9, 'TH/s': 1e12, 'PH/s': 1e15
+} %}
+{{ value * factor.get(unit, 1) }}
+```
+
 ## Energy Dashboard
 
 - `Total Energy Consumed` is provided as an energy sensor (`device_class: energy`, `state_class: total_increasing`, unit: Wh).

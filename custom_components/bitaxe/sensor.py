@@ -21,6 +21,15 @@ DOMAIN = "bitaxe"
 
 HASHRATE_SENSOR_TYPES = ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]
 DIFFICULTY_SENSOR_TYPES = ["bestDiff", "bestSessionDiff", "poolDifficulty"]
+SI_PREFIXES = {
+    -1: "m",
+    0: "",
+    1: "k",
+    2: "M",
+    3: "G",
+    4: "T",
+    5: "P",
+}
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
@@ -135,7 +144,7 @@ class BitAxeSensor(SensorEntity):
 
         if self.sensor_type in DIFFICULTY_SENSOR_TYPES:
             try:
-                scaled_value, unit = self._format_with_si_prefix(float(value), base_unit="D")
+                scaled_value, unit = BitAxeSensor._format_with_si_prefix(float(value), base_unit="D")
                 self._attr_native_unit_of_measurement = unit
                 return scaled_value
             except (ValueError, TypeError):
@@ -156,7 +165,7 @@ class BitAxeSensor(SensorEntity):
         if self.sensor_type in HASHRATE_SENSOR_TYPES:
             try:
                 # Bitaxe API values are in GH/s. Convert to H/s before SI scaling.
-                scaled_value, unit = self._format_with_si_prefix(float(value) * 1_000_000_000, base_unit="H/s")
+                scaled_value, unit = BitAxeSensor._format_with_si_prefix(float(value) * 1_000_000_000, base_unit="H/s")
                 self._attr_native_unit_of_measurement = unit
                 return scaled_value
             except (ValueError, TypeError):
@@ -177,25 +186,15 @@ class BitAxeSensor(SensorEntity):
     @staticmethod
     def _format_with_si_prefix(value: float, base_unit: str = ""):
         """Format a numeric value using dynamic SI prefixes."""
-        prefixes = {
-            -1: "m",
-            0: "",
-            1: "k",
-            2: "M",
-            3: "G",
-            4: "T",
-            5: "P",
-        }
-
         if value == 0:
-            return 0.0, f"{prefixes[0]}{base_unit}"
+            return 0.0, f"{SI_PREFIXES[0]}{base_unit}"
 
         sign = -1 if value < 0 else 1
         abs_value = abs(value)
 
         exponent = 0
-        max_exponent = max(prefixes)
-        min_exponent = min(prefixes)
+        max_exponent = max(SI_PREFIXES)
+        min_exponent = min(SI_PREFIXES)
         while abs_value >= 1000 and exponent < max_exponent:
             abs_value /= 1000.0
             exponent += 1
@@ -203,7 +202,7 @@ class BitAxeSensor(SensorEntity):
             abs_value *= 1000.0
             exponent -= 1
 
-        prefix = prefixes.get(exponent, "")
+        prefix = SI_PREFIXES.get(exponent, "")
         scaled_value = abs_value * sign
 
         if abs(scaled_value) >= 100:
