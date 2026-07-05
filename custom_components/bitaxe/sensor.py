@@ -19,6 +19,19 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "bitaxe"
 
+HASHRATE_SENSOR_TYPES = ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]
+DIFFICULTY_SENSOR_TYPES = ["bestDiff", "bestSessionDiff", "poolDifficulty"]
+SI_PREFIXES = {
+    -1: "m",
+    0: "",
+    1: "k",
+    2: "M",
+    3: "G",
+    4: "T",
+    5: "P",
+}
+GH_TO_H_MULTIPLIER = 1_000_000_000
+
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
     "energy": "Total Energy Consumed",  # NEU: Der berechnete Energiezähler für das Dashboard
@@ -130,9 +143,11 @@ class BitAxeSensor(SensorEntity):
         if self.sensor_type == "freeHeap":
             return round(float(value) / (1024 * 1024), 2)
 
-        if self.sensor_type in ["bestDiff", "bestSessionDiff", "poolDifficulty"]:
+        if self.sensor_type in DIFFICULTY_SENSOR_TYPES:
             try:
-                return int(float(value))
+                scaled_value, unit = BitAxeSensor._format_with_si_prefix(float(value), base_unit="D")
+                self._attr_native_unit_of_measurement = unit
+                return scaled_value
             except (ValueError, TypeError):
                 return value
 
@@ -148,8 +163,16 @@ class BitAxeSensor(SensorEntity):
         if self.sensor_type == "current":
             return round(float(value) / 1000.0, 2)
 
-        if self.sensor_type in ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]:
-            return round(float(value), 1)
+        if self.sensor_type in HASHRATE_SENSOR_TYPES:
+            try:
+                # Bitaxe API values are in GH/s. Convert to H/s before SI scaling.
+                scaled_value, unit = BitAxeSensor._format_with_si_prefix(
+                    float(value) * GH_TO_H_MULTIPLIER, base_unit="H/s"
+                )
+                self._attr_native_unit_of_measurement = unit
+                return scaled_value
+            except (ValueError, TypeError):
+                return value
 
         if self.sensor_type in ["responseTime", "processTime"]:
             return round(float(value), 0)
@@ -162,6 +185,37 @@ class BitAxeSensor(SensorEntity):
         hours, remainder = divmod(remainder, 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{days}d {hours}h {minutes}m {seconds}s"
+
+    @staticmethod
+    def _format_with_si_prefix(value: float, base_unit: str = ""):
+        """Format a numeric value using dynamic SI prefixes."""
+        if value == 0:
+            return 0.0, f"{SI_PREFIXES[0]}{base_unit}"
+
+        sign = -1 if value < 0 else 1
+        abs_value = abs(value)
+
+        exponent = 0
+        max_exponent = max(SI_PREFIXES)
+        min_exponent = min(SI_PREFIXES)
+        while abs_value >= 1000 and exponent < max_exponent:
+            abs_value /= 1000.0
+            exponent += 1
+        while abs_value < 1 and exponent > min_exponent:
+            abs_value *= 1000.0
+            exponent -= 1
+
+        prefix = SI_PREFIXES.get(exponent, "")
+        scaled_value = abs_value * sign
+
+        if abs(scaled_value) >= 100:
+            rounded = round(scaled_value, 1)
+        elif abs(scaled_value) >= 10:
+            rounded = round(scaled_value, 2)
+        else:
+            rounded = round(scaled_value, 3)
+
+        return rounded, f"{prefix}{base_unit}"
 
     def _set_device_and_state_classes(self):
         """Assign native Home Assistant Device and State Classes."""
@@ -205,9 +259,9 @@ class BitAxeSensor(SensorEntity):
             self._attr_device_class = SensorDeviceClass.DATA_SIZE
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
-        elif self.sensor_type in ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]:
+        elif self.sensor_type in HASHRATE_SENSOR_TYPES:
             self._attr_state_class = SensorStateClass.MEASUREMENT
-            self._attr_native_unit_of_measurement = "GH/s"
+            self._attr_native_unit_of_measurement = "H/s"
         elif self.sensor_type == "actualFrequency":
             self._attr_device_class = SensorDeviceClass.FREQUENCY
             self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -217,6 +271,8 @@ class BitAxeSensor(SensorEntity):
             self._attr_native_unit_of_measurement = "RPM"
         elif self.sensor_type in ["sharesAccepted", "sharesRejected"]:
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        elif self.sensor_type in DIFFICULTY_SENSOR_TYPES:
+            self._attr_native_unit_of_measurement = "D"
 
     def _get_icon(self, sensor_type):
         """Select crisp Material Design Icons for the entities."""
