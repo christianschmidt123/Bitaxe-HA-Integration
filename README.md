@@ -55,7 +55,7 @@ The integration creates one device with the following sensors:
 | Sensor | Description | Unit / Behavior |
 | --- | --- | --- |
 | Power Consumption | Current miner power draw | W |
-| Total Energy Consumed | Cumulative energy from power over time | Wh (`total_increasing`, Energy Dashboard compatible) |
+| Total Energy Consumed | Cumulative energy from power over time | Wh (total_increasing, Energy Dashboard compatible) |
 | Input Voltage | Input voltage | V |
 | Input Current | Input current | A |
 | Temperature ASIC | ASIC temperature | °C |

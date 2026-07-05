@@ -177,33 +177,33 @@ class BitAxeSensor(SensorEntity):
     @staticmethod
     def _format_with_si_prefix(value: float, base_unit: str = ""):
         """Format a numeric value using dynamic SI prefixes."""
-        prefixes = [
-            (-1, "m"),
-            (0, ""),
-            (1, "k"),
-            (2, "M"),
-            (3, "G"),
-            (4, "T"),
-            (5, "P"),
-        ]
+        prefixes = {
+            -1: "m",
+            0: "",
+            1: "k",
+            2: "M",
+            3: "G",
+            4: "T",
+            5: "P",
+        }
 
         if value == 0:
-            return 0.0, base_unit
+            return 0.0, f"{prefixes[0]}{base_unit}"
 
         sign = -1 if value < 0 else 1
         abs_value = abs(value)
 
         exponent = 0
-        if abs_value < 1:
-            exponent = -1
-        while abs_value >= 1000 and exponent < 5:
+        max_exponent = max(prefixes)
+        min_exponent = min(prefixes)
+        while abs_value >= 1000 and exponent < max_exponent:
             abs_value /= 1000.0
             exponent += 1
-        while abs_value < 1 and exponent > -1:
+        while abs_value < 1 and exponent > min_exponent:
             abs_value *= 1000.0
             exponent -= 1
 
-        prefix = next((p for e, p in prefixes if e == exponent), "")
+        prefix = prefixes.get(exponent, "")
         scaled_value = abs_value * sign
 
         if abs(scaled_value) >= 100:
