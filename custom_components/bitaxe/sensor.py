@@ -38,7 +38,7 @@ UPTIME_PATTERN = re.compile(
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
-    "energy": "Total Energy Consumed",  # NEU: Der berechnete Energiezähler für das Dashboard
+    "energy": "Total Energy Consumed",
     "voltage": "Input Voltage",
     "current": "Input Current",
     "temp": "Temperature ASIC",
@@ -76,17 +76,25 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     _LOGGER.debug(f"Setting up all sensors for device: {device_name}")
 
-    # Speicher für die Energieberechnung an die Coordinator-Instanz hängen, falls noch nicht vorhanden
     if not hasattr(coordinator, "_last_energy_calc_time"):
         coordinator._last_energy_calc_time = time.time()
         coordinator._total_energy_wh = 0.0
 
+    # Deine originalen Bitaxe Sensoren erzeugen
     sensors = [
         BitAxeSensor(coordinator, sensor_type, device_name, entry)
         for sensor_type in SENSOR_NAME_MAP.keys()
     ]
 
-    async_add_entities(sensors, update_before_add=True)
+    # NEU: Die neuen Benchmark Live-Sensoren hinzufügen
+    bench_sensors = [
+        BitaxeBenchLiveSensor(hass, entry, device_name, "status", "Benchmark Status", "mdi:information-outline"),
+        BitaxeBenchLiveSensor(hass, entry, device_name, "progress", "Benchmark Fortschritt", "mdi:progress-clock", PERCENTAGE),
+        BitaxeBenchLiveSensor(hass, entry, device_name, "best_mhz", "Benchmark Beste Frequenz", "mdi:sine-wave", UnitOfFrequency.MEGAHERTZ),
+        BitaxeBenchLiveSensor(hass, entry, device_name, "best_mv", "Benchmark Beste Spannung", "mdi:lightning-bolt", "mV"),
+    ]
+
+    async_add_entities(sensors + bench_sensors, update_before_add=True)
 
 
 class BitAxeSensor(SensorEntity):
@@ -102,7 +110,7 @@ class BitAxeSensor(SensorEntity):
         self._attr_name = f"{SENSOR_NAME_MAP.get(sensor_type, sensor_type)} ({device_name})"
         self._attr_unique_id = f"{entry.entry_id}_{sensor_type}"
         self._attr_icon = self._get_icon(sensor_type)
-        
+
         self._set_device_and_state_classes()
 
         _LOGGER.debug(f"Initialized BitAxeSensor: {self._attr_name} (ID: {self._attr_unique_id})")
@@ -121,23 +129,20 @@ class BitAxeSensor(SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor with noise reduction."""
-        
-        # Sonderlogik für unseren selbstberechneten Energiewert
+
         if self.sensor_type == "energy":
             current_power = self.coordinator.data.get("power", None)
             if current_power is not None:
                 now = time.time()
                 time_delta = now - self.coordinator._last_energy_calc_time
-                
-                # Berechnung: Watt * Stunden = Wattstunden (Wh)
+
                 if time_delta > 0:
                     hours = time_delta / 3600.0
                     added_energy = float(current_power) * hours
                     self.coordinator._total_energy_wh += added_energy
-                
+
                 self.coordinator._last_energy_calc_time = now
-            
-            # Rückgabe in Wattstunden (Wh), auf 2 Nachkommastellen gerundet
+
             return round(self.coordinator._total_energy_wh, 2)
 
         value = self.coordinator.data.get(self.sensor_type, None)
@@ -169,7 +174,6 @@ class BitAxeSensor(SensorEntity):
 
         if self.sensor_type in HASHRATE_SENSOR_TYPES:
             try:
-                # Bitaxe API values are in GH/s. Convert to H/s before SI scaling.
                 scaled_value, unit = BitAxeSensor._format_with_si_prefix(
                     float(value) * GH_TO_H_MULTIPLIER, base_unit="H/s"
                 )
@@ -242,9 +246,8 @@ class BitAxeSensor(SensorEntity):
             self._attr_device_class = SensorDeviceClass.POWER
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfPower.WATT
-            
+
         elif self.sensor_type == "energy":
-            # NEU: Exakte Konfiguration für das Energie-Dashboard
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
             self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -332,3 +335,38 @@ class BitAxeSensor(SensorEntity):
         elif sensor_type == "blockHeight":
             return "mdi:cube-outline"
         return "mdi:help-circle"
+
+
+class BitaxeBenchLiveSensor(SensorEntity):
+    """NEU: Sensor zur Anzeige des 24h Benchmark-Zwischenstands in Echtzeit."""
+    
+    def __init__(self, hass, entry, device_name, key, label, icon, unit=None):
+        self.hass = hass
+        self.entry = entry
+        self._device_name = device_name
+        self._key = key
+        self._attr_name = f"{label} ({device_name})"
+        self._attr_unique_id = f"{entry.entry_id}_bench_{key}"
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._state = "Standby" if key == "status" else None
+
+    @property
+    def device_info(self):
+        return {"identifiers": {(DOMAIN, self.entry.entry_id)}, "name": self._device_name}
+
+    @property
+    def native_value(self):
+        return self._state
+
+    async def async_added_to_hass(self):
+        """Abonniert das Event-System des Hintergrund-Threads."""
+        def handle_update(event):
+            new_val = event.data.get(self._key)
+            if new_val is not None:
+                self._state = new_val
+                self.async_write_ha_state()
+
+        self.async_on_remove(
+            self.hass.bus.async_listen(f"bitaxe_bench_update_{self.entry.entry_id}", handle_update)
+        )
