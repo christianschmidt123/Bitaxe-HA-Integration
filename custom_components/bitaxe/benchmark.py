@@ -14,8 +14,8 @@ SLEEP_TIME = 90          # Wartezeit nach einer Einstellungsänderung für Stabi
 
 MAX_TEMP = 66            # Maximal erlaubte ASIC-Temperatur
 MAX_VR_TEMP = 86         # Maximal erlaubte VR-Temperatur
-MIN_INPUT_VOLTAGE_RATIO = 11.0 / 12.0  # Minimale Netzteilspannung relativ zur Nominalspannung
-MAX_INPUT_VOLTAGE_RATIO = 12.6 / 12.0  # Maximale Netzteilspannung relativ zur Nominalspannung
+MIN_INPUT_VOLTAGE_RATIO = 4.8 / 5.0    # Minimale Netzteilspannung relativ zur Nominalspannung (4.8V bei 5V, 11.52V bei 12V)
+MAX_INPUT_VOLTAGE_RATIO = 5.3 / 5.0    # Maximale Netzteilspannung relativ zur Nominalspannung (5.3V bei 5V, 12.72V bei 12V)
 
 MAX_ALLOWED_VOLTAGE = 1400   # Absolutes Maximum Chip-Spannung (mV)
 MAX_ALLOWED_FREQUENCY = 1200 # Absolutes Maximum Frequenz (MHz)
@@ -23,7 +23,8 @@ FREQUENCY_STEP = 25
 VOLTAGE_STEP = 20
 MAX_AVG_ERROR_PERCENT = 2.0  # Mittlere ASIC-Fehlerquote pro 10 Minuten
 
-OC_UNLOCK_PATH = "/#/settings?oc="
+# Hinweis: '#/settings?oc' ist ein Browser-Hash-Route-Mechanismus und
+# wird bei direkten HTTP-Requests nicht an den Server übertragen.
 SETTINGS_KEY_MAP = {
     "display": "display",
     "rotation": "rotation",
@@ -90,10 +91,16 @@ def fetch_system_info(bitaxe_ip):
 
 def unlock_overclock(bitaxe_ip):
     try:
-        res = requests.get(f"{bitaxe_ip}{OC_UNLOCK_PATH}", timeout=10)
+        res = requests.patch(
+            f"{bitaxe_ip}/api/system",
+            json={"overclockEnabled": 1},
+            timeout=10,
+        )
         res.raise_for_status()
+        return True
     except Exception as e:
         _LOGGER.warning(f"Fehler beim Freischalten von Overclocking: {e}")
+        return False
 
 
 def build_settings_payload(info, voltage, frequency):
@@ -281,9 +288,14 @@ def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, ma
             fire_update(hass, entry_id, "Fehler: Verbindung fehlgeschlagen")
             return
 
+        if "overclockEnabled" not in info:
+            _LOGGER.error("Firmware meldet keinen overclockEnabled-Status.")
+            fire_update(hass, entry_id, "Fehler: Firmware meldet keinen Overclocking-Status")
+            return
+
         if not int(info.get("overclockEnabled", 0)):
-            _LOGGER.error("Overclocking konnte nicht freigeschaltet werden.")
-            fire_update(hass, entry_id, "Fehler: Overclocking konnte nicht freigeschaltet werden")
+            _LOGGER.error("Overclocking konnte nicht per API freigeschaltet werden.")
+            fire_update(hass, entry_id, "Fehler: Overclocking konnte nicht per API freigeschaltet werden")
             return
 
     nominal_voltage = float(info.get("nominalVoltage") or 12)
