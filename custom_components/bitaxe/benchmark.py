@@ -14,13 +14,17 @@ SLEEP_TIME = 90          # Wartezeit nach einer Einstellungsänderung für Stabi
 
 MAX_TEMP = 66            # Maximal erlaubte ASIC-Temperatur
 MAX_VR_TEMP = 86         # Maximal erlaubte VR-Temperatur
-MIN_INPUT_VOLTAGE = 11.0 # Minimale Netzteilspannung unter Last
-MAX_INPUT_VOLTAGE = 12.6 # Maximale Netzteilspannung
+MIN_INPUT_VOLTAGE_RATIO = 4.8 / 5.0    # Minimale Netzteilspannung relativ zur Nominalspannung (4.8V bei 5V, 11.52V bei 12V)
+MAX_INPUT_VOLTAGE_RATIO = 5.3 / 5.0    # Maximale Netzteilspannung relativ zur Nominalspannung (5.3V bei 5V, 12.72V bei 12V)
 
 MAX_ALLOWED_VOLTAGE = 1400   # Absolutes Maximum Chip-Spannung (mV)
 MAX_ALLOWED_FREQUENCY = 1200 # Absolutes Maximum Frequenz (MHz)
+FREQUENCY_STEP = 25
+VOLTAGE_STEP = 20
+MAX_AVG_ERROR_PERCENT = 2.0  # Mittlere ASIC-Fehlerquote pro 10 Minuten
 
-OC_UNLOCK_PATH = "/#/settings?oc="
+# Hinweis: '#/settings?oc' ist ein Browser-Hash-Route-Mechanismus und
+# wird bei direkten HTTP-Requests nicht an den Server übertragen.
 SETTINGS_KEY_MAP = {
     "display": "display",
     "rotation": "rotation",
@@ -87,10 +91,16 @@ def fetch_system_info(bitaxe_ip):
 
 def unlock_overclock(bitaxe_ip):
     try:
-        res = requests.get(f"{bitaxe_ip}{OC_UNLOCK_PATH}", timeout=10)
+        res = requests.patch(
+            f"{bitaxe_ip}/api/system",
+            json={"overclockEnabled": 1},
+            timeout=10,
+        )
         res.raise_for_status()
+        return True
     except Exception as e:
         _LOGGER.warning(f"Fehler beim Freischalten von Overclocking: {e}")
+        return False
 
 
 def build_settings_payload(info, voltage, frequency):
@@ -153,30 +163,51 @@ def set_system_settings(bitaxe_ip, voltage, frequency):
         _LOGGER.warning(f"Fehler beim Senden der Config an BitAxe: {e}")
 
 
-def finalize_benchmark(hass, entry_id, bitaxe_ip, state, default_voltage, default_frequency, is_cancelled):
+STOP_REASON_LABELS = {
+    "THERMAL_LIMIT": "{metric}-Temperaturlimit erreicht (gemessen: {value:.1f}°C, Grenze: {limit}°C)",
+    "POWER_LIMIT": "Leistungslimit erreicht (gemessen: {value:.1f}W, Grenze: {limit}W)",
+    "INPUT_VOLTAGE_FAULT": "Eingangsspannung außerhalb des zulässigen Bereichs (gemessen: {value:.2f}V, zulässig: {min:.2f}V\u2013{max:.2f}V)",
+    "UNSTABLE_CONNECTION": "Verbindung zum Bitaxe instabil (nur {received}/{required} gültige Messwerte erhalten)",
+    "ZERO_HASHRATE": "Keine Hashrate gemessen (Ø {value:.2f} GH/s)",
+    "USER_CANCELLED": "Manuell abgebrochen",
+    "MAX_VOLTAGE_REACHED": "Maximale Spannung erreicht, Fehlerquote weiterhin zu hoch (gemessen: {error:.2f}%, Grenze: {limit:.2f}%, bei {voltage}mV)",
+    "SEARCH_EXHAUSTED": "Suche beendet, Grenzwerte erreicht (Spannung: {voltage}mV, Frequenz: {frequency}MHz)",
+}
+
+
+def finalize_benchmark(hass, entry_id, bitaxe_ip, state, default_voltage, default_frequency, is_cancelled, stop_reason=None, stop_details=None):
     best_voltage = state.get("best_mv") if state else None
     best_frequency = state.get("best_mhz") if state else None
+    raw_label = STOP_REASON_LABELS.get(stop_reason)
+    if raw_label:
+        try:
+            reason_text = raw_label.format(**(stop_details or {}))
+        except (KeyError, ValueError, TypeError):
+            reason_text = raw_label
+    else:
+        reason_text = None
+    reason_suffix = f" - Grund: {reason_text}" if reason_text else ""
 
     if best_voltage is not None and best_frequency is not None:
         set_system_settings(bitaxe_ip, best_voltage, best_frequency)
-        final_msg = "Abgebrochen (Bestwert gesetzt!)" if is_cancelled else "Beendet (Bestwert gesetzt!)"
+        final_msg = f"Abgebrochen (Bestwert gesetzt!){reason_suffix}" if is_cancelled else f"Beendet (Bestwert gesetzt!){reason_suffix}"
     else:
         set_system_settings(bitaxe_ip, default_voltage, default_frequency)
-        final_msg = "Abgebrochen (Standardwerte wiederhergestellt)" if is_cancelled else "Beendet (Standardwerte wiederhergestellt)"
+        final_msg = f"Abgebrochen (Standardwerte wiederhergestellt){reason_suffix}" if is_cancelled else f"Beendet (Standardwerte wiederhergestellt){reason_suffix}"
 
     clear_benchmark_status(hass, entry_id)
     clear_benchmark_cancel(hass, entry_id)
     fire_update(hass, entry_id, final_msg, 100, best_frequency, best_voltage)
 
-def run_benchmark_step(hass, entry_id, bitaxe_ip, max_power):
+def run_benchmark_step(hass, entry_id, bitaxe_ip, max_power, min_input_voltage, max_input_voltage):
     """Führt eine einzelne Stufe aus und prüft regelmäßig auf Abbruch."""
-    hash_rates, temperatures, power_consumptions, vr_temps = [], [], [], []
+    hash_rates, temperatures, power_consumptions, vr_temps, error_rates = [], [], [], [], []
     total_samples = BENCHMARK_TIME // SAMPLE_INTERVAL
 
     for sample in range(total_samples):
         # Abbruch mitten im Schritt prüfen
         if check_and_clear_cancel(hass, entry_id):
-            return None, "USER_CANCELLED"
+            return None, "USER_CANCELLED", {}
 
         try:
             res = requests.get(f"{bitaxe_ip}/api/system/info", timeout=10)
@@ -185,36 +216,51 @@ def run_benchmark_step(hass, entry_id, bitaxe_ip, max_power):
                 temp = info.get("temp")
                 vr_temp = info.get("vrTemp")
                 voltage = info.get("voltage")
+                voltage_v = voltage / 1000.0 if voltage else None
                 hash_rate = info.get("hashRate")
                 power = info.get("power")
+                error_percentage = info.get("errorPercentage")
                 
                 if temp is not None and hash_rate is not None and power is not None:
-                    if temp >= MAX_TEMP or (vr_temp and vr_temp >= MAX_VR_TEMP):
-                        return None, "THERMAL_LIMIT"
-                    if voltage and (voltage < MIN_INPUT_VOLTAGE or voltage > MAX_INPUT_VOLTAGE):
-                        return None, "INPUT_VOLTAGE_FAULT"
+                    if temp >= MAX_TEMP:
+                        return None, "THERMAL_LIMIT", {"metric": "ASIC", "value": temp, "limit": MAX_TEMP}
+                    if vr_temp and vr_temp >= MAX_VR_TEMP:
+                        return None, "THERMAL_LIMIT", {"metric": "VR", "value": vr_temp, "limit": MAX_VR_TEMP}
+                    if voltage_v and (voltage_v < min_input_voltage or voltage_v > max_input_voltage):
+                        return None, "INPUT_VOLTAGE_FAULT", {"value": voltage_v, "min": min_input_voltage, "max": max_input_voltage}
                     if power > max_power:
-                        return None, "POWER_LIMIT"
+                        return None, "POWER_LIMIT", {"value": power, "limit": max_power}
 
                     hash_rates.append(hash_rate)
                     temperatures.append(temp)
                     power_consumptions.append(power)
                     if vr_temp:
                         vr_temps.append(vr_temp)
+                    if error_percentage is not None:
+                        error_rates.append(error_percentage)
+
+                    samples_done = sample + 1
+                    avg_error = sum(error_rates) / len(error_rates) if error_rates else None
+                    progress = (samples_done / total_samples) * 100
+                    status = f"Messe {samples_done}/{total_samples}"
+                    if avg_error is not None:
+                        status = f"{status} (Fehler Ø {avg_error:.2f}%)"
+                    fire_update(hass, entry_id, status, progress)
         except Exception:
             pass
         time.sleep(SAMPLE_INTERVAL)
 
     if len(hash_rates) < (total_samples * 0.7):
-        return None, "UNSTABLE_CONNECTION"
+        return None, "UNSTABLE_CONNECTION", {"received": len(hash_rates), "required": total_samples}
 
     avg_hash = sum(hash_rates) / len(hash_rates)
     avg_power = sum(power_consumptions) / len(power_consumptions)
+    avg_error = sum(error_rates) / len(error_rates) if error_rates else None
     
     if avg_hash < 1.0: 
-        return None, "ZERO_HASHRATE"
+        return None, "ZERO_HASHRATE", {"value": avg_hash}
 
-    return {"avg_hash": avg_hash, "avg_power": avg_power, "efficiency": avg_power / avg_hash}, None
+    return {"avg_hash": avg_hash, "avg_power": avg_power, "avg_error": avg_error, "efficiency": avg_power / avg_hash}, None, {}
 
 def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, max_power: int = 40, initial_voltage: int = 1150, initial_frequency: int = 525):
     bitaxe_ip = f"http://{ip_address}"
@@ -242,10 +288,19 @@ def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, ma
             fire_update(hass, entry_id, "Fehler: Verbindung fehlgeschlagen")
             return
 
-        if not int(info.get("overclockEnabled", 0)):
-            _LOGGER.error("Overclocking konnte nicht freigeschaltet werden.")
-            fire_update(hass, entry_id, "Fehler: Overclocking konnte nicht freigeschaltet werden")
+        if "overclockEnabled" not in info:
+            _LOGGER.error("Firmware meldet keinen overclockEnabled-Status.")
+            fire_update(hass, entry_id, "Fehler: Firmware meldet keinen Overclocking-Status")
             return
+
+        if not int(info.get("overclockEnabled", 0)):
+            _LOGGER.error("Overclocking konnte nicht per API freigeschaltet werden.")
+            fire_update(hass, entry_id, "Fehler: Overclocking konnte nicht per API freigeschaltet werden")
+            return
+
+    nominal_voltage = float(info.get("nominalVoltage") or 12)
+    min_input_voltage = nominal_voltage * MIN_INPUT_VOLTAGE_RATIO
+    max_input_voltage = nominal_voltage * MAX_INPUT_VOLTAGE_RATIO
 
     state = load_benchmark_status(hass, entry_id)
     if not state or not state.get("is_running"):
@@ -266,41 +321,75 @@ def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, ma
 
     fire_update(hass, entry_id, "Läuft (Bereite vor...)", 0, state["best_mhz"], state["best_mv"])
     
+    stop_reason = None
+    stop_details = {}
+
     while state["current_voltage"] <= MAX_ALLOWED_VOLTAGE and state["current_frequency"] <= MAX_ALLOWED_FREQUENCY:
         # Vor Schleifenbeginn auf Abbruch prüfen
         if check_and_clear_cancel(hass, entry_id):
+            stop_reason = "USER_CANCELLED"
             break
 
         progress = ((state["current_voltage"] - initial_voltage) / (MAX_ALLOWED_VOLTAGE - initial_voltage + 1)) * 100
+        avg_error_text = ""
+        if state.get("last_avg_error") is not None:
+            avg_error_text = f", Fehler Ø {state['last_avg_error']:.2f}%"
         fire_update(
             hass, entry_id, 
-            f"Teste {state['current_frequency']}MHz @ {state['current_voltage']}mV ({max_power}W Limit)", 
+            f"Teste {state['current_frequency']}MHz @ {state['current_voltage']}mV ({max_power}W Limit{avg_error_text})", 
             progress, state["best_mhz"], state["best_mv"]
         )
         
         set_system_settings(bitaxe_ip, state["current_voltage"], state["current_frequency"])
         time.sleep(SLEEP_TIME)
         
-        res, err = run_benchmark_step(hass, entry_id, bitaxe_ip, max_power)
+        res, err, err_details = run_benchmark_step(hass, entry_id, bitaxe_ip, max_power, min_input_voltage, max_input_voltage)
         
         if err == "USER_CANCELLED":
+            stop_reason = "USER_CANCELLED"
+            break
+
+        if err in {"THERMAL_LIMIT", "POWER_LIMIT", "INPUT_VOLTAGE_FAULT"}:
+            _LOGGER.info(f"Benchmark endet wegen hartem Limit: {err}")
+            stop_reason = err
+            stop_details = err_details
             break
             
         if err:
             _LOGGER.info(f"Stufe fehlgeschlagen wegen: {err}. Passe Suchpfad an...")
-            if state["current_frequency"] > initial_frequency:
-                state["current_frequency"] -= 25
-                state["current_voltage"] += 20
+            if state["current_voltage"] < MAX_ALLOWED_VOLTAGE:
+                state["current_voltage"] = min(MAX_ALLOWED_VOLTAGE, state["current_voltage"] + VOLTAGE_STEP)
+            elif state["current_frequency"] > initial_frequency:
+                state["current_frequency"] = max(initial_frequency, state["current_frequency"] - FREQUENCY_STEP)
             else:
-                state["current_voltage"] += 20
+                stop_reason = err
+                stop_details = err_details
+                break
             save_benchmark_status(hass, entry_id, state)
             continue
+
+        state["last_avg_error"] = res["avg_error"]
+
+        if res["avg_error"] is not None and res["avg_error"] > MAX_AVG_ERROR_PERCENT:
+            _LOGGER.info(
+                f"Durchschnittliche Fehlerquote {res['avg_error']:.2f}% zu hoch, erhöhe Spannung bei {state['current_frequency']}MHz"
+            )
+            if state["current_voltage"] < MAX_ALLOWED_VOLTAGE:
+                state["current_voltage"] = min(MAX_ALLOWED_VOLTAGE, state["current_voltage"] + VOLTAGE_STEP)
+                save_benchmark_status(hass, entry_id, state)
+                continue
+
+            _LOGGER.info("Maximale Spannung erreicht, Benchmark wird beendet.")
+            stop_reason = "MAX_VOLTAGE_REACHED"
+            stop_details = {"error": res["avg_error"], "limit": MAX_AVG_ERROR_PERCENT, "voltage": state["current_voltage"]}
+            break
 
         # Erfolg auswerten
         state["results"].append({
             "freq": state["current_frequency"],
             "volt": state["current_voltage"],
             "hash": res["avg_hash"],
+            "error": res["avg_error"],
             "efficiency": res["efficiency"]
         })
         
@@ -308,9 +397,12 @@ def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, ma
         state["best_mv"] = state["current_voltage"]
         
         # Frequenz erhöhen
-        state["current_frequency"] += 25
+        state["current_frequency"] += FREQUENCY_STEP
         save_benchmark_status(hass, entry_id, state)
 
     # Beendigung verarbeiten (Entweder durch Abbruch oder fertig)
     is_cancelled = not (state["current_voltage"] <= MAX_ALLOWED_VOLTAGE and state["current_frequency"] <= MAX_ALLOWED_FREQUENCY)
-    finalize_benchmark(hass, entry_id, bitaxe_ip, state, def_v, def_f, is_cancelled)
+    if stop_reason is None and is_cancelled:
+        stop_reason = "SEARCH_EXHAUSTED"
+        stop_details = {"voltage": state["current_voltage"], "frequency": state["current_frequency"]}
+    finalize_benchmark(hass, entry_id, bitaxe_ip, state, def_v, def_f, is_cancelled, stop_reason, stop_details)
