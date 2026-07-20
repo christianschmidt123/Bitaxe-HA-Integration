@@ -6,6 +6,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.event import async_track_time_interval
 
+from .benchmark import load_benchmark_status, run_bitaxe_benchmark
+
 DOMAIN = "bitaxe"
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,13 +29,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
         hass.data[DOMAIN] = {}
     hass.data[DOMAIN][device_id] = {"coordinator": coordinator}
 
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    # "button" zur Plattform-Liste hinzugefügt
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "button"])
 
     async_track_time_interval(
         hass,
         _update_coordinator(coordinator),
         timedelta(seconds=30)
     )
+
+    # AUTOMATISCHER RESUME: Prüfen, ob vor dem HA-Neustart ein Benchmark lief
+    status = await hass.async_add_executor_job(load_benchmark_status, hass, entry.entry_id)
+    if status and status.get("is_running"):
+        _LOGGER.info(f"Unvollständigen Bitaxe Benchmark für {ip_address} erkannt. Setze im Hintergrund fort...")
+        hass.async_add_executor_job(
+            run_bitaxe_benchmark,
+            hass,
+            entry.entry_id,
+            ip_address
+        )
 
     return True
 
