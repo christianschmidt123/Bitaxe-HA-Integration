@@ -17,24 +17,13 @@ from homeassistant.const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
 DOMAIN = "bitaxe"
 
 HASHRATE_SENSOR_TYPES = ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]
 DIFFICULTY_SENSOR_TYPES = ["bestDiff", "bestSessionDiff", "poolDifficulty"]
-SI_PREFIXES = {
-    -1: "m",
-    0: "",
-    1: "k",
-    2: "M",
-    3: "G",
-    4: "T",
-    5: "P",
-}
+SI_PREFIXES = {-1: "m", 0: "", 1: "k", 2: "M", 3: "G", 4: "T", 5: "P"}
 GH_TO_H_MULTIPLIER = 1_000_000_000
-UPTIME_PATTERN = re.compile(
-    r"^\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$"
-)
+UPTIME_PATTERN = re.compile(r"^\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$")
 
 SENSOR_NAME_MAP = {
     "power": "Power Consumption",
@@ -80,13 +69,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
         coordinator._last_energy_calc_time = time.time()
         coordinator._total_energy_wh = 0.0
 
-    # Deine originalen Bitaxe Sensoren erzeugen
+    # Original-Sensoren erzeugen
     sensors = [
-        BitAxeSensor(coordinator, sensor_type, device_name, entry)
+        BitAxeSensor(coordinator, sensor_type, device_name, entry) 
         for sensor_type in SENSOR_NAME_MAP.keys()
     ]
 
-    # NEU: Die neuen Benchmark Live-Sensoren hinzufügen
+    # Live-Benchmark-Sensoren erzeugen
     bench_sensors = [
         BitaxeBenchLiveSensor(hass, entry, device_name, "status", "Benchmark Status", "mdi:information-outline"),
         BitaxeBenchLiveSensor(hass, entry, device_name, "progress", "Benchmark Fortschritt", "mdi:progress-clock", PERCENTAGE),
@@ -106,11 +95,9 @@ class BitAxeSensor(SensorEntity):
         self.sensor_type = sensor_type
         self.entry = entry
         self._device_name = device_name
-
         self._attr_name = f"{SENSOR_NAME_MAP.get(sensor_type, sensor_type)} ({device_name})"
         self._attr_unique_id = f"{entry.entry_id}_{sensor_type}"
         self._attr_icon = self._get_icon(sensor_type)
-
         self._set_device_and_state_classes()
 
         _LOGGER.debug(f"Initialized BitAxeSensor: {self._attr_name} (ID: {self._attr_unique_id})")
@@ -129,20 +116,16 @@ class BitAxeSensor(SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor with noise reduction."""
-
         if self.sensor_type == "energy":
             current_power = self.coordinator.data.get("power", None)
             if current_power is not None:
                 now = time.time()
                 time_delta = now - self.coordinator._last_energy_calc_time
-
                 if time_delta > 0:
                     hours = time_delta / 3600.0
                     added_energy = float(current_power) * hours
                     self.coordinator._total_energy_wh += added_energy
-
                 self.coordinator._last_energy_calc_time = now
-
             return round(self.coordinator._total_energy_wh, 2)
 
         value = self.coordinator.data.get(self.sensor_type, None)
@@ -196,7 +179,6 @@ class BitAxeSensor(SensorEntity):
             stripped = value.strip()
             if not stripped:
                 return None
-
             try:
                 return int(float(stripped))
             except ValueError:
@@ -206,7 +188,6 @@ class BitAxeSensor(SensorEntity):
             if match and any(group is not None for group in match.groups()):
                 days, hours, minutes, seconds = (int(group or 0) for group in match.groups())
                 return days * 86400 + hours * 3600 + minutes * 60 + seconds
-
         return None
 
     @staticmethod
@@ -246,12 +227,10 @@ class BitAxeSensor(SensorEntity):
             self._attr_device_class = SensorDeviceClass.POWER
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfPower.WATT
-
         elif self.sensor_type == "energy":
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
             self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-
         elif self.sensor_type in ["voltage", "coreVoltageActual"]:
             self._attr_device_class = SensorDeviceClass.VOLTAGE
             self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -298,47 +277,41 @@ class BitAxeSensor(SensorEntity):
 
     def _get_icon(self, sensor_type):
         """Select crisp Material Design Icons for the entities."""
-        if sensor_type == "energy":
-            return "mdi:lightning-bolt"
-        elif sensor_type == "bestSessionDiff":
-            return "mdi:star"
-        elif sensor_type in ["bestDiff", "poolDifficulty"]:
-            return "mdi:trophy"
-        elif sensor_type in ["fanspeed", "fanrpm", "fan2rpm"]:
-            return "mdi:fan"
-        elif sensor_type in ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]:
-            return "mdi:speedometer"
-        elif sensor_type == "power":
-            return "mdi:flash"
-        elif sensor_type in ["voltage", "coreVoltageActual"]:
-            return "mdi:sine-wave"
-        elif sensor_type == "current":
-            return "mdi:amperage"
-        elif sensor_type == "sharesAccepted":
-            return "mdi:share"
-        elif sensor_type == "sharesRejected":
-            return "mdi:share-off"
-        elif sensor_type in ["temp", "temp2", "vrTemp"]:
-            return "mdi:thermometer"
-        elif sensor_type == "uptimeSeconds":
-            return "mdi:clock"
-        elif sensor_type == "errorPercentage":
-            return "mdi:alert-circle-outline"
-        elif sensor_type == "wifiRSSI":
-            return "mdi:wifi"
-        elif sensor_type == "freeHeap":
-            return "mdi:memory"
-        elif sensor_type == "cpuUsage":
-            return "mdi:cpu-64-bit"
-        elif sensor_type == "actualFrequency":
-            return "mdi:sine-wave"
-        elif sensor_type == "blockHeight":
-            return "mdi:cube-outline"
-        return "mdi:help-circle"
+        mapping = {
+            "energy": "mdi:lightning-bolt", 
+            "bestSessionDiff": "mdi:star", 
+            "bestDiff": "mdi:trophy", 
+            "poolDifficulty": "mdi:trophy", 
+            "fanspeed": "mdi:fan", 
+            "fanrpm": "mdi:fan", 
+            "fan2rpm": "mdi:fan", 
+            "hashRate": "mdi:speedometer", 
+            "hashRate_1m": "mdi:speedometer", 
+            "hashRate_10m": "mdi:speedometer", 
+            "hashRate_1h": "mdi:speedometer", 
+            "expectedHashrate": "mdi:speedometer", 
+            "power": "mdi:flash", 
+            "voltage": "mdi:sine-wave", 
+            "coreVoltageActual": "mdi:sine-wave", 
+            "current": "mdi:amperage", 
+            "sharesAccepted": "mdi:share", 
+            "sharesRejected": "mdi:share-off", 
+            "temp": "mdi:thermometer", 
+            "temp2": "mdi:thermometer", 
+            "vrTemp": "mdi:thermometer", 
+            "uptimeSeconds": "mdi:clock", 
+            "errorPercentage": "mdi:alert-circle-outline", 
+            "wifiRSSI": "mdi:wifi", 
+            "freeHeap": "mdi:memory", 
+            "cpuUsage": "mdi:cpu-64-bit", 
+            "actualFrequency": "mdi:sine-wave", 
+            "blockHeight": "mdi:cube-outline"
+        }
+        return mapping.get(sensor_type, "mdi:help-circle")
 
 
 class BitaxeBenchLiveSensor(SensorEntity):
-    """NEU: Sensor zur Anzeige des 24h Benchmark-Zwischenstands in Echtzeit."""
+    """Sensor zur Anzeige des 24h Benchmark-Zwischenstands in Echtzeit."""
     
     def __init__(self, hass, entry, device_name, key, label, icon, unit=None):
         self.hass = hass
