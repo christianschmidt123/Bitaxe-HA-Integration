@@ -10,7 +10,7 @@ _LOGGER = logging.getLogger(__name__)
 # Konfiguration und Sicherheitsgrenzen
 BENCHMARK_TIME = 600      # 10 Minuten pro Schritt
 SAMPLE_INTERVAL = 10     # Alle 10 Sekunden messen
-SLEEP_TIME = 90          # Wartezeit nach Neustart für Stabilität
+SLEEP_TIME = 90          # Wartezeit nach einer Einstellungsänderung für Stabilität
 
 MAX_TEMP = 66            # Maximal erlaubte ASIC-Temperatur
 MAX_VR_TEMP = 86         # Maximal erlaubte VR-Temperatur
@@ -19,6 +19,20 @@ MAX_INPUT_VOLTAGE = 12.6 # Maximale Netzteilspannung
 
 MAX_ALLOWED_VOLTAGE = 1400   # Absolutes Maximum Chip-Spannung (mV)
 MAX_ALLOWED_FREQUENCY = 1200 # Absolutes Maximum Frequenz (MHz)
+
+OC_UNLOCK_PATH = "/#/settings?oc="
+SETTINGS_KEY_MAP = {
+    "display": "display",
+    "rotation": "rotation",
+    "invertscreen": "invertscreen",
+    "displayTimeout": "displayTimeout",
+    "autofanspeed": "autofanspeed",
+    "manualFanSpeed": "manualFanSpeed",
+    "minFanSpeed": "minfanspeed",
+    "temptarget": "temptarget",
+    "overheat_mode": "overheat_mode",
+    "statsFrequency": "statsFrequency",
+}
 
 def get_status_path(hass: HomeAssistant, entry_id: str) -> str:
     """Gibt den Pfad zur Status-Datei zurück."""
@@ -45,6 +59,51 @@ def save_benchmark_status(hass: HomeAssistant, entry_id: str, state):
             json.dump(state, f)
     except Exception as e:
         _LOGGER.error(f"Fehler beim Speichern des Benchmark-Status: {e}")
+
+
+def clear_benchmark_status(hass: HomeAssistant, entry_id: str):
+    path = get_status_path(hass, entry_id)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        _LOGGER.warning(f"Fehler beim Löschen des Benchmark-Status: {e}")
+
+
+def clear_benchmark_cancel(hass: HomeAssistant, entry_id: str):
+    cancel_path = get_cancel_path(hass, entry_id)
+    try:
+        if os.path.exists(cancel_path):
+            os.remove(cancel_path)
+    except Exception as e:
+        _LOGGER.warning(f"Fehler beim Löschen des Abbruch-Signals: {e}")
+
+
+def fetch_system_info(bitaxe_ip):
+    res = requests.get(f"{bitaxe_ip}/api/system/info", timeout=10)
+    res.raise_for_status()
+    return res.json()
+
+
+def unlock_overclock(bitaxe_ip):
+    try:
+        res = requests.get(f"{bitaxe_ip}{OC_UNLOCK_PATH}", timeout=10)
+        res.raise_for_status()
+    except Exception as e:
+        _LOGGER.warning(f"Fehler beim Freischalten von Overclocking: {e}")
+
+
+def build_settings_payload(info, voltage, frequency):
+    payload = {}
+
+    for read_key, write_key in SETTINGS_KEY_MAP.items():
+        if read_key in info:
+            payload[write_key] = info[read_key]
+
+    payload["coreVoltage"] = voltage
+    payload["frequency"] = frequency
+    return payload
+
 
 def cancel_benchmark(hass: HomeAssistant, entry_id: str):
     """Erstellt das Abbruch-Signal für den Hintergrund-Thread."""
@@ -76,27 +135,38 @@ def fire_update(hass: HomeAssistant, entry_id: str, status: str, progress: float
     })
 
 def fetch_device_specs(bitaxe_ip):
-    res = requests.get(f"{bitaxe_ip}/api/system/info", timeout=10)
-    info = res.json()
+    info = fetch_system_info(bitaxe_ip)
     return (
         int(info.get("smallCoreCount", 0)),
         int(info.get("asicCount", 1)),
         int(info.get("coreVoltage", 1150)),
-        int(info.get("frequency", 500))
+        int(info.get("frequency", 525))
     )
 
 def set_system_settings(bitaxe_ip, voltage, frequency):
     try:
-        # Erst Einstellungen setzen
-        requests.post(f"{bitaxe_ip}/api/system/settings", json={
-            "coreVoltage": voltage,
-            "frequency": frequency
-        }, timeout=10)
-        time.sleep(2)
-        # Danach Gerät neu starten, damit die Frequenz greift
-        requests.post(f"{bitaxe_ip}/api/system/restart", timeout=5)
+        info = fetch_system_info(bitaxe_ip)
+        payload = build_settings_payload(info, voltage, frequency)
+        res = requests.patch(f"{bitaxe_ip}/api/system", json=payload, timeout=10)
+        res.raise_for_status()
     except Exception as e:
         _LOGGER.warning(f"Fehler beim Senden der Config an BitAxe: {e}")
+
+
+def finalize_benchmark(hass, entry_id, bitaxe_ip, state, default_voltage, default_frequency, is_cancelled):
+    best_voltage = state.get("best_mv") if state else None
+    best_frequency = state.get("best_mhz") if state else None
+
+    if best_voltage is not None and best_frequency is not None:
+        set_system_settings(bitaxe_ip, best_voltage, best_frequency)
+        final_msg = "Abgebrochen (Bestwert gesetzt!)" if is_cancelled else "Beendet (Bestwert gesetzt!)"
+    else:
+        set_system_settings(bitaxe_ip, default_voltage, default_frequency)
+        final_msg = "Abgebrochen (Standardwerte wiederhergestellt)" if is_cancelled else "Beendet (Standardwerte wiederhergestellt)"
+
+    clear_benchmark_status(hass, entry_id)
+    clear_benchmark_cancel(hass, entry_id)
+    fire_update(hass, entry_id, final_msg, 100, best_frequency, best_voltage)
 
 def run_benchmark_step(hass, entry_id, bitaxe_ip, max_power):
     """Führt eine einzelne Stufe aus und prüft regelmäßig auf Abbruch."""
@@ -146,7 +216,7 @@ def run_benchmark_step(hass, entry_id, bitaxe_ip, max_power):
 
     return {"avg_hash": avg_hash, "avg_power": avg_power, "efficiency": avg_power / avg_hash}, None
 
-def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, max_power: int = 40, initial_voltage: int = 1150, initial_frequency: int = 500):
+def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, max_power: int = 40, initial_voltage: int = 1150, initial_frequency: int = 525):
     bitaxe_ip = f"http://{ip_address}"
     
     # Sicherstellen, dass ein eventuelles altes Abbruchsignal gelöscht ist
@@ -158,8 +228,27 @@ def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, ma
         fire_update(hass, entry_id, "Fehler: Verbindung fehlgeschlagen")
         return
 
+    try:
+        info = fetch_system_info(bitaxe_ip)
+    except Exception:
+        fire_update(hass, entry_id, "Fehler: Verbindung fehlgeschlagen")
+        return
+
+    if not int(info.get("overclockEnabled", 0)):
+        unlock_overclock(bitaxe_ip)
+        try:
+            info = fetch_system_info(bitaxe_ip)
+        except Exception:
+            fire_update(hass, entry_id, "Fehler: Verbindung fehlgeschlagen")
+            return
+
+        if not int(info.get("overclockEnabled", 0)):
+            _LOGGER.error("Overclocking konnte nicht freigeschaltet werden.")
+            fire_update(hass, entry_id, "Fehler: Overclocking konnte nicht freigeschaltet werden")
+            return
+
     state = load_benchmark_status(hass, entry_id)
-    if not state:
+    if not state or not state.get("is_running"):
         state = {
             "current_voltage": initial_voltage,
             "current_frequency": initial_frequency,
@@ -224,15 +313,4 @@ def run_bitaxe_benchmark(hass: HomeAssistant, entry_id: str, ip_address: str, ma
 
     # Beendigung verarbeiten (Entweder durch Abbruch oder fertig)
     is_cancelled = not (state["current_voltage"] <= MAX_ALLOWED_VOLTAGE and state["current_frequency"] <= MAX_ALLOWED_FREQUENCY)
-    
-    state["is_running"] = False
-    save_benchmark_status(hass, entry_id, state)
-    
-    if state["best_mhz"] and state["best_mv"]:
-        set_system_settings(bitaxe_ip, state["best_mv"], state["best_mhz"])
-        final_msg = f"Beendet (Bestwert gesetzt!)" if not is_cancelled else "Abgebrochen (Bestwert gesetzt!)"
-    else:
-        set_system_settings(bitaxe_ip, def_v, def_f)
-        final_msg = "Beendet (Standardwerte wiederhergestellt)" if not is_cancelled else "Abgebrochen"
-        
-    fire_update(hass, entry_id, final_msg, 100, state["best_mhz"], state["best_mv"])
+    finalize_benchmark(hass, entry_id, bitaxe_ip, state, def_v, def_f, is_cancelled)
