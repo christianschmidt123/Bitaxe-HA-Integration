@@ -12,6 +12,7 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 - **Real-time Monitoring**: Keep track of power, temperature, hashrate, difficulty, and other mining metrics in real-time.
 - **Easy Configuration**: Configure your Bitaxe device effortlessly through Home Assistant's user interface.
 - **Energy Dashboard ready**: Includes a cumulative energy sensor with Home Assistant energy metadata.
+- **Update visibility**: Shows firmware and Web UI update availability based on ESP-Miner releases.
 - **Dynamic SI scaling**:
   - Hashrate entities are scaled automatically (mH/s, kH/s, MH/s, GH/s, TH/s, PH/s).
   - Difficulty entities are scaled automatically (mD, D, kD, MD, GD, TD, PD).
@@ -81,6 +82,15 @@ The integration creates one device with the following sensors:
 | Free Heap Memory | Free heap memory | MB |
 | CPU Usage | CPU usage | % |
 | Current Block Height | Current Bitcoin block height | number |
+
+## Available Update Entities
+
+The integration also creates two update entities on the same Bitaxe device:
+
+- **Firmware Update**: Compares the device `version` with the latest ESP-Miner release that contains `esp-miner.bin`.
+- **Web UI Update**: Compares the device `axeOSVersion` with the latest ESP-Miner release that contains `www.bin`.
+
+Both update entities include the GitHub release link and release notes when a matching ESP-Miner release is available.
 
 ## Notes on Unit Scaling
 

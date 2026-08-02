@@ -13,5 +13,15 @@
     "error": {
       "cannot_connect": "Failed to connect to Bitaxe. Please check the IP address."
     }
+  },
+  "entity": {
+    "update": {
+      "firmware_update": {
+        "name": "Firmware Update"
+      },
+      "web_ui_update": {
+        "name": "Web UI Update"
+      }
+    }
   }
 }
