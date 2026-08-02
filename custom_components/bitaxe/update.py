@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 from typing import Any
+import asyncio
 import logging
 
 from awesomeversion import AwesomeVersion, AwesomeVersionCompareException
-from homeassistant.components.update import UpdateDeviceClass, UpdateEntity
+from homeassistant.components.update import UpdateDeviceClass, UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
-from .const import DOMAIN, FIRMWARE_ASSET_NAME, WEB_UI_ASSET_NAME
+from .api import download_binary, upload_binary
+from .const import (
+    DOMAIN,
+    FIRMWARE_ASSET_NAME,
+    FIRMWARE_OTA_PATH,
+    WEB_UI_ASSET_NAME,
+    WEB_UI_OTA_PATH,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +42,7 @@ async def async_setup_entry(
                 entry,
                 "firmware_update",
                 FIRMWARE_ASSET_NAME,
+                FIRMWARE_OTA_PATH,
                 "version",
                 UpdateDeviceClass.FIRMWARE,
             ),
@@ -42,6 +52,7 @@ async def async_setup_entry(
                 entry,
                 "web_ui_update",
                 WEB_UI_ASSET_NAME,
+                WEB_UI_OTA_PATH,
                 "axeOSVersion",
             ),
         ],
@@ -53,6 +64,7 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
     """Representation of an available Bitaxe update."""
 
     _attr_has_entity_name = True
+    _attr_supported_features = UpdateEntityFeature.INSTALL
 
     def __init__(
         self,
@@ -61,6 +73,7 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
         entry: ConfigEntry,
         translation_key: str,
         asset_name: str,
+        ota_path: str,
         installed_version_key: str,
         device_class: UpdateDeviceClass | None = None,
     ) -> None:
@@ -68,6 +81,7 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
         self.entry = entry
         self.release_coordinator = release_coordinator
         self.asset_name = asset_name
+        self.ota_path = ota_path
         self.installed_version_key = installed_version_key
         self._attr_translation_key = translation_key
         self._attr_unique_id = f"{entry.entry_id}_{translation_key}"
@@ -138,15 +152,73 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
         return release.get("body")
 
     @property
+    def entity_picture(self) -> str | None:
+        """Return the asset download URL as entity picture is unsupported."""
+        return None
+
+    async def async_install(
+        self,
+        version: str | None,
+        backup: bool,
+        **kwargs: Any,
+    ) -> None:
+        """Install the selected update via Bitaxe OTA."""
+        del backup, kwargs
+
+        asset = self._release_asset
+        if asset is None:
+            raise HomeAssistantError("No matching ESP-Miner update asset is available.")
+
+        latest = self.latest_version
+        if latest is None:
+            raise HomeAssistantError("The latest ESP-Miner version could not be determined.")
+
+        if version is not None and version != latest:
+            raise HomeAssistantError("Only the latest ESP-Miner release can be installed.")
+
+        if _is_newer_version(self.installed_version, latest) is not True:
+            raise HomeAssistantError("No newer update is currently available for this entity.")
+
+        ip_address = self.entry.data["ip_address"]
+        asset_url = asset["browser_download_url"]
+        ota_url = f"http://{ip_address}{self.ota_path}"
+
+        self._attr_in_progress = True
+        self.async_write_ha_state()
+
+        try:
+            payload = await download_binary(self.hass, asset_url)
+            response_text = await upload_binary(self.hass, ota_url, payload)
+            _LOGGER.info(
+                "Triggered Bitaxe OTA update for %s via %s: %s",
+                self._attr_unique_id,
+                ota_url,
+                response_text.strip(),
+            )
+            await asyncio.sleep(15)
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            raise HomeAssistantError(f"Bitaxe OTA installation failed: {err}") from err
+        finally:
+            self._attr_in_progress = False
+            self.async_write_ha_state()
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose related release metadata."""
-        release = self.release_coordinator.data or {}
-        asset = _release_assets(release).get(self.asset_name, {})
+        asset = self._release_asset or {}
         return {
             "asset_name": self.asset_name,
             "asset_url": asset.get("browser_download_url"),
             "board_version": (self.coordinator.data or {}).get("boardVersion"),
+            "ota_endpoint": self.ota_path,
         }
+
+    @property
+    def _release_asset(self) -> dict[str, Any] | None:
+        """Return the matching release asset if present."""
+        release = self.release_coordinator.data or {}
+        return _release_assets(release).get(self.asset_name)
 
 
 def _normalize_version(value: Any) -> str | None:

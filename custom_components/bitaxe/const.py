@@ -11,3 +11,6 @@ ESP_MINER_RELEASE_URL = (
 
 FIRMWARE_ASSET_NAME = "esp-miner.bin"
 WEB_UI_ASSET_NAME = "www.bin"
+
+FIRMWARE_OTA_PATH = "/api/system/OTA"
+WEB_UI_OTA_PATH = "/api/system/OTAWWW"
