@@ -17,10 +17,10 @@
   "entity": {
     "update": {
       "firmware_update": {
-        "name": "Firmware Update"
+        "name": "ESP-Miner Firmware"
       },
       "web_ui_update": {
-        "name": "Web UI Update"
+        "name": "ESP-Miner Web UI"
       }
     }
   }
