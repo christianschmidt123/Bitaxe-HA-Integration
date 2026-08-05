@@ -87,6 +87,7 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
         self._attr_unique_id = f"{entry.entry_id}_{translation_key}"
         self._attr_device_class = device_class
         self._attr_icon = "mdi:update"
+        self._last_error: str | None = None
 
     async def async_added_to_hass(self) -> None:
         """Listen to both device and release coordinator updates."""
@@ -195,9 +196,11 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
                 ota_url,
                 response_text.strip(),
             )
+            self._last_error = None
             await asyncio.sleep(15)
             await self.coordinator.async_request_refresh()
         except Exception as err:
+            self._last_error = str(err)
             raise HomeAssistantError(f"Bitaxe OTA installation failed: {err}") from err
         finally:
             self._attr_in_progress = False
@@ -207,12 +210,15 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose related release metadata."""
         asset = self._release_asset or {}
-        return {
+        attrs = {
             "asset_name": self.asset_name,
             "asset_url": asset.get("browser_download_url"),
             "board_version": (self.coordinator.data or {}).get("boardVersion"),
             "ota_endpoint": self.ota_path,
         }
+        if self._last_error is not None:
+            attrs["last_install_error"] = self._last_error
+        return attrs
 
     @property
     def _release_asset(self) -> dict[str, Any] | None:
