@@ -22,5 +22,15 @@
     "abort": {
       "already_configured": "This Bitaxe is already configured."
     }
+  },
+  "entity": {
+    "update": {
+      "firmware_update": {
+        "name": "ESP-Miner Firmware"
+      },
+      "web_ui_update": {
+        "name": "ESP-Miner Web UI"
+      }
+    }
   }
 }

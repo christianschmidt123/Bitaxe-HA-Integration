@@ -13,6 +13,8 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 - **Real-time Monitoring**: Keep track of power, temperature, hashrate, difficulty, and other mining metrics in real-time.
 - **Easy Configuration**: Configure your Bitaxe device effortlessly through Home Assistant's user interface.
 - **Energy Dashboard ready**: Includes a cumulative energy sensor with Home Assistant energy metadata.
+- **Update visibility**: Shows firmware and Web UI update availability based on ESP-Miner releases.
+- **OTA installation**: Installs firmware and Web UI updates directly from Home Assistant.
 - **Readable units**:
   - Hashrate entities use a fixed `TH/s` unit for stable long-term statistics.
   - Difficulty entities are scaled automatically (mD, D, kD, MD, GD, TD, PD).
@@ -97,6 +99,21 @@ The integration creates one device with the following sensors:
 | Benchmark Fortschritt | Live benchmark progress *(entity label currently in German)* | % |
 | Benchmark Beste Frequenz | Best benchmark frequency so far *(entity label currently in German)* | MHz |
 | Benchmark Beste Spannung | Best benchmark voltage so far *(entity label currently in German)* | mV |
+
+## Available Update Entities
+
+The integration also creates two update entities on the same Bitaxe device:
+
+- **Firmware Update**: Compares the device `version` with the latest ESP-Miner release that contains `esp-miner.bin`.
+- **Web UI Update**: Compares the device `axeOSVersion` with the latest ESP-Miner release that contains `www.bin`.
+
+Both update entities include the GitHub release link and release notes when a matching ESP-Miner release is available.
+When an update is available, Home Assistant can also install it by downloading the matching ESP-Miner release asset and uploading it to the Bitaxe OTA endpoint:
+
+- Firmware Update → `/api/system/OTA`
+- Web UI Update → `/api/system/OTAWWW`
+
+After the upload, the Bitaxe may reboot and the installed version can remain unchanged in Home Assistant until the device is reachable again.
 
 ## Available Buttons
 
