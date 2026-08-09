@@ -3,15 +3,24 @@
     "step": {
       "user": {
         "title": "Configure Bitaxe",
-        "description": "Please enter the IP address of your Bitaxe device.",
+        "description": "Please enter the IP address of your Bitaxe device. The integration will read the name directly from the miner when possible.",
         "data": {
           "ip_address": "IP Address",
-          "device_name": "Device Name"
+          "name": "Optional custom name"
         }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered Bitaxe",
+        "description": "Bitaxe \"{device_name}\" was discovered at {ip_address}.",
+        "data": {}
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to Bitaxe. Please check the IP address."
+      "cannot_connect": "Failed to connect to Bitaxe. Please check the IP address.",
+      "invalid_ip": "Invalid IP address format."
+    },
+    "abort": {
+      "already_configured": "This Bitaxe is already configured."
     }
   }
 }

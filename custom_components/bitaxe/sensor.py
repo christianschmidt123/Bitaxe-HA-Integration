@@ -60,7 +60,7 @@ SENSOR_NAME_MAP = {
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up all BitAxe sensors from a config entry."""
-    coordinator = hass.data[DOMAIN][entry.unique_id]["coordinator"]
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     device_name = entry.data.get("device_name", "BitAxe Miner")
 
     _LOGGER.debug(f"Setting up all sensors for device: {device_name}")

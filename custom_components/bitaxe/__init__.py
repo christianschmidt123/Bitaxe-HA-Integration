@@ -1,11 +1,11 @@
 from datetime import timedelta
-import aiohttp
 import logging
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.event import async_track_time_interval
 
+from .api import async_fetch_system_info
 from .benchmark import load_benchmark_status, run_bitaxe_benchmark
 
 DOMAIN = "bitaxe"
@@ -19,7 +19,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
         hass,
         _LOGGER,
         name=f"BitAxe Sensor Data ({device_id})",
-        update_method=lambda: fetch_bitaxe_data(ip_address),
+        update_method=lambda: fetch_bitaxe_data(hass, ip_address),
         update_interval=timedelta(seconds=30),
     )
 
@@ -27,7 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
 
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
-    hass.data[DOMAIN][device_id] = {"coordinator": coordinator}
+    hass.data[DOMAIN][entry.entry_id] = {"coordinator": coordinator}
 
     # "button" zur Plattform-Liste hinzugefügt
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "button"])
@@ -56,15 +56,11 @@ def _update_coordinator(coordinator: DataUpdateCoordinator):
         await coordinator.async_request_refresh()
     return refresh
 
-async def fetch_bitaxe_data(ip_address):
-    url = f"http://{ip_address}/api/system/info"
+async def fetch_bitaxe_data(hass: HomeAssistant, ip_address):
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                response.raise_for_status()
-                data = await response.json()
-                _LOGGER.debug("Fetched data: %s", data)
-                return data
+        data = await async_fetch_system_info(hass, ip_address)
+        _LOGGER.debug("Fetched data: %s", data)
+        return data
     except Exception as e:
         _LOGGER.error("Error fetching data from BitAxe API: %s", e)
         return None
