@@ -12,6 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 OTA_DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=300)
 OTA_UPLOAD_TIMEOUT = aiohttp.ClientTimeout(total=300)
+RESTART_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
 class BitAxeApiError(Exception):
@@ -82,6 +83,20 @@ async def upload_binary(hass, url: str, payload: bytes) -> str:
             return await response.text()
     except aiohttp.ClientError as e:
         _LOGGER.error("Client error occurred while uploading to %s: %s", url, e)
+        raise
+
+
+async def restart_device(hass, host: str) -> str:
+    """Trigger a Bitaxe restart via API."""
+    session = async_get_clientsession(hass)
+    url = f"http://{host}/api/system/restart"
+
+    try:
+        async with session.post(url, timeout=RESTART_TIMEOUT) as response:
+            response.raise_for_status()
+            return await response.text()
+    except aiohttp.ClientError as e:
+        _LOGGER.error("Client error occurred while restarting %s: %s", host, e)
         raise
 
 

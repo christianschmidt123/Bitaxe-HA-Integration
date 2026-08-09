@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
-from .api import download_binary, upload_binary
+from .api import download_binary, restart_device, upload_binary
 from .const import (
     DOMAIN,
     FIRMWARE_ASSET_NAME,
@@ -254,6 +254,19 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
                 self._attr_unique_id,
                 response_text.strip(),
             )
+            try:
+                restart_response = await restart_device(self.hass, ip_address)
+                _LOGGER.info(
+                    "Bitaxe OTA (%s): restart triggered — device response: %s",
+                    self._attr_unique_id,
+                    restart_response.strip(),
+                )
+            except Exception as restart_err:
+                _LOGGER.warning(
+                    "Bitaxe OTA (%s): restart trigger failed after upload — %s",
+                    self._attr_unique_id,
+                    restart_err,
+                )
             self._last_error = None
             await asyncio.sleep(60)
             for _attempt in range(6):
