@@ -30,7 +30,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Bitaxe update entities from a config entry."""
-    device_data = hass.data[DOMAIN][entry.unique_id]
+    device_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = device_data["coordinator"]
     release_coordinator = device_data["release_coordinator"]
 
@@ -168,38 +168,84 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
 
         asset = self._release_asset
         if asset is None:
-            raise HomeAssistantError("No matching ESP-Miner update asset is available.")
+            _LOGGER.error(
+                "Bitaxe OTA (%s): no asset named '%s' found in the latest release. "
+                "Available assets: %s",
+                self._attr_unique_id,
+                self.asset_name,
+                list(_release_assets(self.release_coordinator.data or {}).keys()),
+            )
+            raise HomeAssistantError(
+                f"No release asset named '{self.asset_name}' is available."
+            )
 
         latest = self.latest_version
         if latest is None:
+            _LOGGER.error(
+                "Bitaxe OTA (%s): latest version could not be determined. "
+                "installed=%s release_tag=%s",
+                self._attr_unique_id,
+                self.installed_version,
+                (self.release_coordinator.data or {}).get("tag_name"),
+            )
             raise HomeAssistantError("The latest ESP-Miner version could not be determined.")
 
         if version is not None and version != latest:
             raise HomeAssistantError("Only the latest ESP-Miner release can be installed.")
 
-        if _is_newer_version(self.installed_version, latest) is not True:
+        newer = _is_newer_version(self.installed_version, latest)
+        if newer is not True:
+            _LOGGER.warning(
+                "Bitaxe OTA (%s): skipping install — version comparison result: %s "
+                "(installed=%s, latest=%s)",
+                self._attr_unique_id,
+                newer,
+                self.installed_version,
+                latest,
+            )
             raise HomeAssistantError("No newer update is currently available for this entity.")
 
         ip_address = self.entry.data["ip_address"]
         asset_url = asset["browser_download_url"]
         ota_url = f"http://{ip_address}{self.ota_path}"
 
+        _LOGGER.info(
+            "Bitaxe OTA (%s): starting — asset=%s url=%s ota=%s installed=%s latest=%s",
+            self._attr_unique_id,
+            self.asset_name,
+            asset_url,
+            ota_url,
+            self.installed_version,
+            latest,
+        )
+
         self._attr_in_progress = True
         self.async_write_ha_state()
 
         try:
+            _LOGGER.debug("Bitaxe OTA (%s): downloading asset from %s", self._attr_unique_id, asset_url)
             payload = await download_binary(self.hass, asset_url)
+            _LOGGER.debug(
+                "Bitaxe OTA (%s): downloaded %d bytes, uploading to %s",
+                self._attr_unique_id,
+                len(payload),
+                ota_url,
+            )
             response_text = await upload_binary(self.hass, ota_url, payload)
             _LOGGER.info(
-                "Triggered Bitaxe OTA update for %s via %s: %s",
+                "Bitaxe OTA (%s): upload complete — device response: %s",
                 self._attr_unique_id,
-                ota_url,
                 response_text.strip(),
             )
             self._last_error = None
             await asyncio.sleep(15)
             await self.coordinator.async_request_refresh()
         except Exception as err:
+            _LOGGER.error(
+                "Bitaxe OTA (%s): installation failed — %s",
+                self._attr_unique_id,
+                err,
+            )
             self._last_error = str(err)
             raise HomeAssistantError(f"Bitaxe OTA installation failed: {err}") from err
         finally:
