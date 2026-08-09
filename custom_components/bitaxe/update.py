@@ -128,13 +128,21 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
 
         latest = _normalize_version(release.get("tag_name"))
         installed = self.installed_version
-        is_newer = _is_newer_version(installed, latest)
 
+        if installed is None:
+            _LOGGER.debug(
+                "Bitaxe update (%s): installed version unknown (key=%s not in device data). "
+                "Reporting latest=%s so the update can be installed.",
+                self._attr_unique_id,
+                self.installed_version_key,
+                latest,
+            )
+            return latest
+
+        is_newer = _is_newer_version(installed, latest)
         if is_newer is True:
             return latest
-        if installed is not None:
-            return installed
-        return None
+        return installed
 
     @property
     def release_url(self) -> str | None:
@@ -194,7 +202,7 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
             raise HomeAssistantError("Only the latest ESP-Miner release can be installed.")
 
         newer = _is_newer_version(self.installed_version, latest)
-        if newer is not True:
+        if newer is False:
             _LOGGER.warning(
                 "Bitaxe OTA (%s): skipping install — version comparison result: %s "
                 "(installed=%s, latest=%s)",
@@ -204,6 +212,15 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
                 latest,
             )
             raise HomeAssistantError("No newer update is currently available for this entity.")
+
+        if newer is None:
+            _LOGGER.warning(
+                "Bitaxe OTA (%s): installed version unknown (key=%s missing from device data); "
+                "proceeding with install of latest=%s",
+                self._attr_unique_id,
+                self.installed_version_key,
+                latest,
+            )
 
         ip_address = self.entry.data["ip_address"]
         asset_url = asset["browser_download_url"]
