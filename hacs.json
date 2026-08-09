@@ -1,7 +1,4 @@
 {
   "name": "Bitaxe Monitoring",
-  "content_in_root": false,
-  "filename": "custom_components/bitaxe",
-  "render_readme": true,
-  "zip_release": false
+  "render_readme": true
 }
