@@ -255,8 +255,12 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
                 response_text.strip(),
             )
             self._last_error = None
-            await asyncio.sleep(15)
-            await self.coordinator.async_request_refresh()
+            await asyncio.sleep(60)
+            for _attempt in range(6):
+                await self.coordinator.async_request_refresh()
+                if self.coordinator.data:
+                    break
+                await asyncio.sleep(10)
         except Exception as err:
             _LOGGER.error(
                 "Bitaxe OTA (%s): installation failed — %s",
