@@ -113,7 +113,7 @@ When an update is available, Home Assistant can also install it by downloading t
 - Firmware Update → `/api/system/OTA`
 - Web UI Update → `/api/system/OTAWWW`
 
-After the upload, the Bitaxe may reboot and the installed version can remain unchanged in Home Assistant until the device is reachable again.
+After the upload, the integration triggers a Bitaxe reboot automatically and the installed version can remain unchanged in Home Assistant until the device is reachable again.
 
 ## Available Buttons
 
