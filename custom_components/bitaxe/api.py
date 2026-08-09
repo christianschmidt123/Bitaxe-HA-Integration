@@ -95,6 +95,12 @@ async def restart_device(hass, host: str) -> str:
         async with session.post(url, timeout=RESTART_TIMEOUT) as response:
             response.raise_for_status()
             return await response.text()
+    except (aiohttp.ServerDisconnectedError, aiohttp.ClientConnectionError):
+        _LOGGER.info(
+            "Connection closed while restarting %s; treating as expected reboot behavior.",
+            host,
+        )
+        return "connection closed during reboot"
     except aiohttp.ClientError as e:
         _LOGGER.error("Client error occurred while restarting %s: %s", host, e)
         raise
