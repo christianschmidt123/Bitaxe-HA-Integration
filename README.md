@@ -12,8 +12,8 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 - **Real-time Monitoring**: Keep track of power, temperature, hashrate, difficulty, and other mining metrics in real-time.
 - **Easy Configuration**: Configure your Bitaxe device effortlessly through Home Assistant's user interface.
 - **Energy Dashboard ready**: Includes a cumulative energy sensor with Home Assistant energy metadata.
-- **Dynamic SI scaling**:
-  - Hashrate entities are scaled automatically (mH/s, kH/s, MH/s, GH/s, TH/s, PH/s).
+- **Readable units**:
+  - Hashrate entities use a fixed `TH/s` unit for stable long-term statistics.
   - Difficulty entities are scaled automatically (mD, D, kD, MD, GD, TD, PD).
 
 ## Manual Installation
@@ -63,11 +63,11 @@ The integration creates one device with the following sensors:
 | Temperature VR | VR temperature | °C |
 | Core Voltage Actual | Core voltage | V |
 | Actual Frequency | ASIC frequency | MHz |
-| Expected Hash Rate | Expected hashrate | Dynamic SI `H/s` scaling |
-| Hash Rate | Current hashrate | Dynamic SI `H/s` scaling |
-| Hash Rate (1m) | 1-minute hashrate average | Dynamic SI `H/s` scaling |
-| Hash Rate (10m) | 10-minute hashrate average | Dynamic SI `H/s` scaling |
-| Hash Rate (1h) | 1-hour hashrate average | Dynamic SI `H/s` scaling |
+| Expected Hash Rate | Expected hashrate | TH/s (fixed unit) |
+| Hash Rate | Current hashrate | TH/s (fixed unit) |
+| Hash Rate (1m) | 1-minute hashrate average | TH/s (fixed unit) |
+| Hash Rate (10m) | 10-minute hashrate average | TH/s (fixed unit) |
+| Hash Rate (1h) | 1-hour hashrate average | TH/s (fixed unit) |
 | ASIC Error Rate | ASIC error percentage | % |
 | Shares Accepted | Accepted shares | counter |
 | Shares Rejected | Rejected shares | counter |
@@ -82,23 +82,16 @@ The integration creates one device with the following sensors:
 | CPU Usage | CPU usage | % |
 | Current Block Height | Current Bitcoin block height | number |
 
-## Notes on Unit Scaling
+## Notes on Unit Behavior
 
-- Hashrate values from the Bitaxe API are normalized and shown with readable SI prefixes.
+- Hashrate values from the Bitaxe API are published in a fixed `TH/s` unit to keep Home Assistant long-term statistics consistent.
 - Difficulty values are also normalized with SI prefixes for large ranges.
 - Entity names stay unchanged, so existing dashboards/automations continue to reference the same entities.
-- Unit prefixes update automatically when values cross SI thresholds (for example MH/s -> GH/s).
-- If you rely on fixed units in templates/automations, normalize values first or compare raw thresholds carefully (for example, convert to H/s before comparing).
+- If you had older hashrate statistics stored with another unit, update the old unit in Home Assistant statistics or clear that entity's historical statistics once.
 
-Example template snippet (unit-aware hashrate conversion to H/s):
+Example template snippet (convert TH/s to H/s if needed):
 ```jinja2
-{% set value = states('sensor.hash_rate') | float(0) %}
-{% set unit = state_attr('sensor.hash_rate', 'unit_of_measurement') %}
-{% set factor = {
-  'mH/s': 1e-3, 'H/s': 1, 'kH/s': 1e3, 'MH/s': 1e6,
-  'GH/s': 1e9, 'TH/s': 1e12, 'PH/s': 1e15
-} %}
-{{ value * factor.get(unit, 1) }}
+{{ states('sensor.hash_rate') | float(0) * 1e12 }}
 ```
 
 ## Energy Dashboard
