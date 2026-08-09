@@ -8,5 +8,11 @@
   "requirements": [],
   "codeowners": ["@DerMiika"],
   "iot_class": "local_polling",
+  "zeroconf": [
+    {
+      "type": "_axeos._sub._http._tcp.local.",
+      "name": "Bitaxe *"
+    }
+  ],
   "icon": "images/bitaxe_icon.png"
 }

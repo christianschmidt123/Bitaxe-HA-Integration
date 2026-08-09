@@ -43,10 +43,11 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 To set up the integration, follow these steps:
 
 1. Go to Settings > Devices & Services > Add Integration.
-2. Search for "Bitaxe" and select it.
-3. Enter the IP address of your Bitaxe miner.
-4.  Choose a name for your Bitaxe miner (this can be any name you prefer).
-5.  Complete the setup.
+2. Home Assistant should discover compatible Bitaxe/AxeOS devices automatically on the local network.
+3. If your Bitaxe is not discovered automatically, search for "Bitaxe" and select it manually.
+4. Enter the IP address of your Bitaxe miner.
+5. The integration will read the Bitaxe hostname automatically and use it as the device name when possible. You can still provide an optional custom name during manual setup.
+6. Complete the setup.
 
 ## Available Sensors
 

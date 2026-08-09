@@ -1,19 +1,59 @@
+import asyncio
+import logging
+
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import format_mac
 
-async def fetch_bitaxe_data(hass, url):
-    """Fetch data from the BitAxe API using the Home Assistant session."""
-    session = async_get_clientsession(hass)
-    
+_LOGGER = logging.getLogger(__name__)
+
+
+class BitAxeApiError(Exception):
+    """Raised when the Bitaxe API cannot be reached."""
+
+
+async def async_fetch_system_info(hass, host: str) -> dict:
+    """Fetch system information from a Bitaxe device."""
+    url = f"http://{host}/api/system/info"
+
     try:
-        async with session.get(url) as response:
-            response.raise_for_status()  # Raises an error for HTTP error responses
-            return await response.json()
-    except aiohttp.ClientError as e:
-        # Log and raise an exception for client errors
-        _LOGGER.error(f"Client error occurred: {e}")
-        raise Exception(f"Client error: {str(e)}")
-    except Exception as e:
-        # Handle other exceptions
-        _LOGGER.error(f"An unexpected error occurred: {e}")
-        raise Exception(f"An unexpected error: {str(e)}")
+        if hass is not None:
+            session = async_get_clientsession(hass)
+            async with session.get(url, timeout=10) as response:
+                response.raise_for_status()
+                return await response.json()
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                response.raise_for_status()
+                return await response.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+        _LOGGER.debug("Failed to fetch Bitaxe system info from %s: %s", host, err)
+        raise BitAxeApiError from err
+
+
+def get_bitaxe_device_name(system_info: dict, fallback: str = "Bitaxe Miner") -> str:
+    """Return the best available device name from the Bitaxe payload."""
+    return (
+        str(
+            system_info.get("hostname")
+            or system_info.get("mdnsHostname")
+            or system_info.get("fullHostname")
+            or fallback
+        )
+        .removesuffix(".local")
+        .strip()
+        or fallback
+    )
+
+
+def get_bitaxe_unique_id(system_info: dict, fallback: str) -> str:
+    """Return a stable unique ID for a Bitaxe device."""
+    mac_address = system_info.get("macAddr")
+    if not mac_address:
+        return fallback
+
+    try:
+        return format_mac(mac_address)
+    except ValueError:
+        return fallback
