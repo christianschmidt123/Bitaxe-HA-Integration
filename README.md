@@ -1,8 +1,9 @@
 # Bitaxe Home Assistant Integration
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-blue.svg)](https://hacs.xyz/)
-[![Latest Release](https://img.shields.io/github/v/release/DerMiika/Bitaxe-HA-Integration)](https://github.com/DerMiika/Bitaxe-HA-Integration/releases)
-[![Stars](https://img.shields.io/github/stars/DerMiika/Bitaxe-HA-Integration)](https://github.com/DerMiika/Bitaxe-HA-Integration/stargazers)
+[![Latest Release](https://img.shields.io/github/v/release/christianschmidt123/Bitaxe-HA-Integration)](https://github.com/christianschmidt123/Bitaxe-HA-Integration/releases)
+[![Stars](https://img.shields.io/github/stars/christianschmidt123/Bitaxe-HA-Integration)](https://github.com/christianschmidt123/Bitaxe-HA-Integration/stargazers)
+[![Open your Home Assistant instance and open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=christianschmidt123&repository=Bitaxe-HA-Integration&category=integration)
 
 
 This is a custom integration for Bitaxe miners in Home Assistant.
@@ -15,6 +16,11 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 - **Readable units**:
   - Hashrate entities use a fixed `TH/s` unit for stable long-term statistics.
   - Difficulty entities are scaled automatically (mD, D, kD, MD, GD, TD, PD).
+- **Benchmark workflow**:
+  - Start automatic benchmark runs directly from Home Assistant (30W / 40W PSU profiles).
+  - Stop a running benchmark at any time.
+  - Live benchmark status sensors for progress, best frequency, and best voltage.
+- **Extended telemetry**: Additional fan speed and fan RPM entities are included where provided by firmware.
 
 ## Manual Installation
 
@@ -23,7 +29,7 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 2. Clone the repository directly into the `custom_components` folder (create the folder if it doesn't exist):
    ```bash
    mkdir -p custom_components
-   git clone https://github.com/DerMiika/Bitaxe-HA-Integration.git /config/custom_components/bitaxe
+   git clone https://github.com/christianschmidt123/Bitaxe-HA-Integration.git /config/custom_components/bitaxe
    ```
 
 3.  Restart Home Assistant.
@@ -34,7 +40,7 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 
 2. Go to **Integrations** and select **Add Repository**.
 
-3. Enter the URL for this repository: `https://github.com/DerMiika/Bitaxe-HA-Integration`.
+3. Enter the URL for this repository: `https://github.com/christianschmidt123/Bitaxe-HA-Integration`.
 
 4. Install the integration and follow the configuration steps.
 
@@ -52,6 +58,8 @@ To set up the integration, follow these steps:
 
 The integration creates one device with the following sensors:
 
+> Note: Some benchmark entity labels currently remain in German because they mirror the exact entity names exposed by the integration.
+
 | Sensor | Description | Unit / Behavior |
 | --- | --- | --- |
 | Power Consumption | Current miner power draw | W |
@@ -63,6 +71,9 @@ The integration creates one device with the following sensors:
 | Temperature VR | VR temperature | °C |
 | Core Voltage Actual | Core voltage | V |
 | Actual Frequency | ASIC frequency | MHz |
+| Fan Speed | Fan speed percentage | % |
+| Fan RPM | Fan speed | RPM |
+| Fan 2 RPM | Second fan speed | RPM |
 | Expected Hash Rate | Expected hashrate | TH/s (fixed unit) |
 | Hash Rate | Current hashrate | TH/s (fixed unit) |
 | Hash Rate (1m) | 1-minute hashrate average | TH/s (fixed unit) |
@@ -81,6 +92,18 @@ The integration creates one device with the following sensors:
 | Free Heap Memory | Free heap memory | MB |
 | CPU Usage | CPU usage | % |
 | Current Block Height | Current Bitcoin block height | number |
+| Benchmark Status | Live benchmark state text | text |
+| Benchmark Fortschritt | Live benchmark progress *(entity label currently in German)* | % |
+| Benchmark Beste Frequenz | Best benchmark frequency so far *(entity label currently in German)* | MHz |
+| Benchmark Beste Spannung | Best benchmark voltage so far *(entity label currently in German)* | mV |
+
+## Available Buttons
+
+The integration also creates device buttons:
+
+- `Benchmark (30W Netzteil)` - Starts the benchmark with a 30W power limit *(button label currently in German)*.
+- `Benchmark (40W Netzteil)` - Starts the benchmark with a 40W power limit *(button label currently in German)*.
+- `Benchmark Abbrechen` - Cancels a running benchmark immediately *(button label currently in German)*.
 
 ## Notes on Unit Behavior
 
