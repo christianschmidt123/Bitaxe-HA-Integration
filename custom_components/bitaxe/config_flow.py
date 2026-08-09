@@ -119,8 +119,8 @@ class BitAxeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return host.rstrip(".")
 
         ip_address = getattr(discovery_info, "ip_address", None)
-        if isinstance(ip_address, str) and ip_address:
-            return ip_address
+        if ip_address is not None:
+            return str(ip_address)
 
         return None
 

@@ -6,6 +6,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import format_mac
 
 _LOGGER = logging.getLogger(__name__)
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
 class BitAxeApiError(Exception):
@@ -19,12 +20,12 @@ async def async_fetch_system_info(hass, host: str) -> dict:
     try:
         if hass is not None:
             session = async_get_clientsession(hass)
-            async with session.get(url, timeout=10) as response:
+            async with session.get(url, timeout=REQUEST_TIMEOUT) as response:
                 response.raise_for_status()
                 return await response.json()
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
+            async with session.get(url, timeout=REQUEST_TIMEOUT) as response:
                 response.raise_for_status()
                 return await response.json()
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
