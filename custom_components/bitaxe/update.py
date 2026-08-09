@@ -128,13 +128,21 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
 
         latest = _normalize_version(release.get("tag_name"))
         installed = self.installed_version
-        is_newer = _is_newer_version(installed, latest)
 
+        if installed is None:
+            _LOGGER.debug(
+                "Bitaxe update (%s): installed version unknown (key=%s not in device data). "
+                "Reporting latest=%s so the update can be installed.",
+                self._attr_unique_id,
+                self.installed_version_key,
+                latest,
+            )
+            return latest
+
+        is_newer = _is_newer_version(installed, latest)
         if is_newer is True:
             return latest
-        if installed is not None:
-            return installed
-        return None
+        return installed
 
     @property
     def release_url(self) -> str | None:
