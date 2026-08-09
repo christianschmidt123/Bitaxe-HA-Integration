@@ -10,6 +10,8 @@ from homeassistant.helpers.device_registry import format_mac
 
 _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
+OTA_DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=300)
+OTA_UPLOAD_TIMEOUT = aiohttp.ClientTimeout(total=300)
 
 
 class BitAxeApiError(Exception):
@@ -57,7 +59,7 @@ async def download_binary(hass, url: str) -> bytes:
     session = async_get_clientsession(hass)
 
     try:
-        async with session.get(url) as response:
+        async with session.get(url, timeout=OTA_DOWNLOAD_TIMEOUT) as response:
             response.raise_for_status()
             return await response.read()
     except aiohttp.ClientError as e:
@@ -74,6 +76,7 @@ async def upload_binary(hass, url: str, payload: bytes) -> str:
             url,
             data=payload,
             headers={"Content-Type": "application/octet-stream"},
+            timeout=OTA_UPLOAD_TIMEOUT,
         ) as response:
             response.raise_for_status()
             return await response.text()
