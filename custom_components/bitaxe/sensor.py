@@ -22,7 +22,7 @@ DOMAIN = "bitaxe"
 HASHRATE_SENSOR_TYPES = ["hashRate", "hashRate_1m", "hashRate_10m", "hashRate_1h", "expectedHashrate"]
 DIFFICULTY_SENSOR_TYPES = ["bestDiff", "bestSessionDiff", "poolDifficulty"]
 SI_PREFIXES = {-1: "m", 0: "", 1: "k", 2: "M", 3: "G", 4: "T", 5: "P"}
-GH_TO_H_MULTIPLIER = 1_000_000_000
+GH_TO_TH_DIVISOR = 1_000
 UPTIME_PATTERN = re.compile(r"^\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$")
 
 SENSOR_NAME_MAP = {
@@ -60,7 +60,7 @@ SENSOR_NAME_MAP = {
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up all BitAxe sensors from a config entry."""
-    coordinator = hass.data[DOMAIN][entry.unique_id]["coordinator"]
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     device_name = entry.data.get("device_name", "BitAxe Miner")
 
     _LOGGER.debug(f"Setting up all sensors for device: {device_name}")
@@ -157,11 +157,7 @@ class BitAxeSensor(SensorEntity):
 
         if self.sensor_type in HASHRATE_SENSOR_TYPES:
             try:
-                scaled_value, unit = BitAxeSensor._format_with_si_prefix(
-                    float(value) * GH_TO_H_MULTIPLIER, base_unit="H/s"
-                )
-                self._attr_native_unit_of_measurement = unit
-                return scaled_value
+                return round(float(value) / GH_TO_TH_DIVISOR, 3)
             except (ValueError, TypeError):
                 return value
 
@@ -262,7 +258,7 @@ class BitAxeSensor(SensorEntity):
             self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         elif self.sensor_type in HASHRATE_SENSOR_TYPES:
             self._attr_state_class = SensorStateClass.MEASUREMENT
-            self._attr_native_unit_of_measurement = "H/s"
+            self._attr_native_unit_of_measurement = "TH/s"
         elif self.sensor_type == "actualFrequency":
             self._attr_device_class = SensorDeviceClass.FREQUENCY
             self._attr_state_class = SensorStateClass.MEASUREMENT

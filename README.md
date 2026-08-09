@@ -1,8 +1,9 @@
 # Bitaxe Home Assistant Integration
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-blue.svg)](https://hacs.xyz/)
-[![Latest Release](https://img.shields.io/github/v/release/DerMiika/Bitaxe-HA-Integration)](https://github.com/DerMiika/Bitaxe-HA-Integration/releases)
-[![Stars](https://img.shields.io/github/stars/DerMiika/Bitaxe-HA-Integration)](https://github.com/DerMiika/Bitaxe-HA-Integration/stargazers)
+[![Latest Release](https://img.shields.io/github/v/release/christianschmidt123/Bitaxe-HA-Integration)](https://github.com/christianschmidt123/Bitaxe-HA-Integration/releases)
+[![Stars](https://img.shields.io/github/stars/christianschmidt123/Bitaxe-HA-Integration)](https://github.com/christianschmidt123/Bitaxe-HA-Integration/stargazers)
+[![Open your Home Assistant instance and open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=christianschmidt123&repository=Bitaxe-HA-Integration&category=integration)
 
 
 This is a custom integration for Bitaxe miners in Home Assistant.
@@ -14,9 +15,14 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 - **Energy Dashboard ready**: Includes a cumulative energy sensor with Home Assistant energy metadata.
 - **Update visibility**: Shows firmware and Web UI update availability based on ESP-Miner releases.
 - **OTA installation**: Installs firmware and Web UI updates directly from Home Assistant.
-- **Dynamic SI scaling**:
-  - Hashrate entities are scaled automatically (mH/s, kH/s, MH/s, GH/s, TH/s, PH/s).
+- **Readable units**:
+  - Hashrate entities use a fixed `TH/s` unit for stable long-term statistics.
   - Difficulty entities are scaled automatically (mD, D, kD, MD, GD, TD, PD).
+- **Benchmark workflow**:
+  - Start automatic benchmark runs directly from Home Assistant (30W / 40W PSU profiles).
+  - Stop a running benchmark at any time.
+  - Live benchmark status sensors for progress, best frequency, and best voltage.
+- **Extended telemetry**: Additional fan speed and fan RPM entities are included where provided by firmware.
 
 ## Manual Installation
 
@@ -25,7 +31,7 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 2. Clone the repository directly into the `custom_components` folder (create the folder if it doesn't exist):
    ```bash
    mkdir -p custom_components
-   git clone https://github.com/DerMiika/Bitaxe-HA-Integration.git /config/custom_components/bitaxe
+   git clone https://github.com/christianschmidt123/Bitaxe-HA-Integration.git /config/custom_components/bitaxe
    ```
 
 3.  Restart Home Assistant.
@@ -36,7 +42,7 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 
 2. Go to **Integrations** and select **Add Repository**.
 
-3. Enter the URL for this repository: `https://github.com/DerMiika/Bitaxe-HA-Integration`.
+3. Enter the URL for this repository: `https://github.com/christianschmidt123/Bitaxe-HA-Integration`.
 
 4. Install the integration and follow the configuration steps.
 
@@ -45,14 +51,17 @@ This is a custom integration for Bitaxe miners in Home Assistant.
 To set up the integration, follow these steps:
 
 1. Go to Settings > Devices & Services > Add Integration.
-2. Search for "Bitaxe" and select it.
-3. Enter the IP address of your Bitaxe miner.
-4.  Choose a name for your Bitaxe miner (this can be any name you prefer).
-5.  Complete the setup.
+2. Home Assistant should discover compatible Bitaxe/AxeOS devices automatically on the local network.
+3. If your Bitaxe is not discovered automatically, search for "Bitaxe" and select it manually.
+4. Enter the IP address of your Bitaxe miner.
+5. The integration will read the Bitaxe hostname automatically and use it as the device name when possible. You can still provide an optional custom name during manual setup.
+6. Complete the setup.
 
 ## Available Sensors
 
 The integration creates one device with the following sensors:
+
+> Note: Some benchmark entity labels currently remain in German because they mirror the exact entity names exposed by the integration.
 
 | Sensor | Description | Unit / Behavior |
 | --- | --- | --- |
@@ -65,11 +74,14 @@ The integration creates one device with the following sensors:
 | Temperature VR | VR temperature | °C |
 | Core Voltage Actual | Core voltage | V |
 | Actual Frequency | ASIC frequency | MHz |
-| Expected Hash Rate | Expected hashrate | Dynamic SI `H/s` scaling |
-| Hash Rate | Current hashrate | Dynamic SI `H/s` scaling |
-| Hash Rate (1m) | 1-minute hashrate average | Dynamic SI `H/s` scaling |
-| Hash Rate (10m) | 10-minute hashrate average | Dynamic SI `H/s` scaling |
-| Hash Rate (1h) | 1-hour hashrate average | Dynamic SI `H/s` scaling |
+| Fan Speed | Fan speed percentage | % |
+| Fan RPM | Fan speed | RPM |
+| Fan 2 RPM | Second fan speed | RPM |
+| Expected Hash Rate | Expected hashrate | TH/s (fixed unit) |
+| Hash Rate | Current hashrate | TH/s (fixed unit) |
+| Hash Rate (1m) | 1-minute hashrate average | TH/s (fixed unit) |
+| Hash Rate (10m) | 10-minute hashrate average | TH/s (fixed unit) |
+| Hash Rate (1h) | 1-hour hashrate average | TH/s (fixed unit) |
 | ASIC Error Rate | ASIC error percentage | % |
 | Shares Accepted | Accepted shares | counter |
 | Shares Rejected | Rejected shares | counter |
@@ -83,6 +95,10 @@ The integration creates one device with the following sensors:
 | Free Heap Memory | Free heap memory | MB |
 | CPU Usage | CPU usage | % |
 | Current Block Height | Current Bitcoin block height | number |
+| Benchmark Status | Live benchmark state text | text |
+| Benchmark Fortschritt | Live benchmark progress *(entity label currently in German)* | % |
+| Benchmark Beste Frequenz | Best benchmark frequency so far *(entity label currently in German)* | MHz |
+| Benchmark Beste Spannung | Best benchmark voltage so far *(entity label currently in German)* | mV |
 
 ## Available Update Entities
 
@@ -99,23 +115,24 @@ When an update is available, Home Assistant can also install it by downloading t
 
 After the upload, the Bitaxe may reboot and the installed version can remain unchanged in Home Assistant until the device is reachable again.
 
-## Notes on Unit Scaling
+## Available Buttons
 
-- Hashrate values from the Bitaxe API are normalized and shown with readable SI prefixes.
+The integration also creates device buttons:
+
+- `Benchmark (30W Netzteil)` - Starts the benchmark with a 30W power limit *(button label currently in German)*.
+- `Benchmark (40W Netzteil)` - Starts the benchmark with a 40W power limit *(button label currently in German)*.
+- `Benchmark Abbrechen` - Cancels a running benchmark immediately *(button label currently in German)*.
+
+## Notes on Unit Behavior
+
+- Hashrate values from the Bitaxe API are published in a fixed `TH/s` unit to keep Home Assistant long-term statistics consistent.
 - Difficulty values are also normalized with SI prefixes for large ranges.
 - Entity names stay unchanged, so existing dashboards/automations continue to reference the same entities.
-- Unit prefixes update automatically when values cross SI thresholds (for example MH/s -> GH/s).
-- If you rely on fixed units in templates/automations, normalize values first or compare raw thresholds carefully (for example, convert to H/s before comparing).
+- If you had older hashrate statistics stored with another unit, update the old unit in Home Assistant statistics or clear that entity's historical statistics once.
 
-Example template snippet (unit-aware hashrate conversion to H/s):
+Example template snippet (convert TH/s to H/s if needed):
 ```jinja2
-{% set value = states('sensor.hash_rate') | float(0) %}
-{% set unit = state_attr('sensor.hash_rate', 'unit_of_measurement') %}
-{% set factor = {
-  'mH/s': 1e-3, 'H/s': 1, 'kH/s': 1e3, 'MH/s': 1e6,
-  'GH/s': 1e9, 'TH/s': 1e12, 'PH/s': 1e15
-} %}
-{{ value * factor.get(unit, 1) }}
+{{ states('sensor.hash_rate') | float(0) * 1e12 }}
 ```
 
 ## Energy Dashboard
