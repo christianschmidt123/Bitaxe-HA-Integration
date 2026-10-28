@@ -34,30 +34,38 @@ async def async_setup_entry(
     coordinator = device_data["coordinator"]
     release_coordinator = device_data["release_coordinator"]
 
-    async_add_entities(
-        [
-            BitaxeUpdateEntity(
-                coordinator,
-                release_coordinator,
-                entry,
-                "firmware_update",
-                FIRMWARE_ASSET_NAME,
-                FIRMWARE_OTA_PATH,
-                "version",
-                UpdateDeviceClass.FIRMWARE,
-            ),
-            BitaxeUpdateEntity(
-                coordinator,
-                release_coordinator,
-                entry,
-                "web_ui_update",
-                WEB_UI_ASSET_NAME,
-                WEB_UI_OTA_PATH,
-                "axeOSVersion",
-            ),
-        ],
-        True,
+    entities = []
+
+    # Firmware-Update ist immer verfügbar (seit v2.15.0: AxeOS ist in esp-miner.bin eingebettet)
+    entities.append(
+        BitaxeUpdateEntity(
+            coordinator,
+            release_coordinator,
+            entry,
+            "firmware_update",
+            FIRMWARE_ASSET_NAME,
+            FIRMWARE_OTA_PATH,
+            "version",
+            UpdateDeviceClass.FIRMWARE,
+        )
     )
+
+    # Web-UI-Update (www.bin) ist seit ESP-Miner v2.15.0 nicht mehr Teil der Releases,
+    # da die AxeOS UI direkt im Firmware-Binary enthalten ist. Wir halten das Entity
+    # dennoch vor, falls ein Nutzer manuell ein www.bin hochladen möchte (legacy/custom UIs).
+    entities.append(
+        BitaxeUpdateEntity(
+            coordinator,
+            release_coordinator,
+            entry,
+            "web_ui_update",
+            WEB_UI_ASSET_NAME,
+            WEB_UI_OTA_PATH,
+            "axeOSVersion",
+        )
+    )
+
+    async_add_entities(entities, True)
 
 
 class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
@@ -123,7 +131,18 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
     def latest_version(self) -> str | None:
         """Return the latest version relevant for this asset."""
         release = self.release_coordinator.data or {}
-        if self.asset_name not in _release_assets(release):
+        assets = _release_assets(release)
+
+        if self.asset_name not in assets:
+            # Asset not in release (e.g. www.bin is gone since ESP-Miner v2.15.0:
+            # the AxeOS web UI is embedded directly into esp-miner.bin).
+            if self.asset_name == WEB_UI_ASSET_NAME:
+                _LOGGER.debug(
+                    "Bitaxe update (%s): '%s' asset not found in latest release — "
+                    "AxeOS web UI is embedded in esp-miner.bin since ESP-Miner v2.15.0.",
+                    self._attr_unique_id,
+                    self.asset_name,
+                )
             return self.installed_version
 
         latest = _normalize_version(release.get("tag_name"))
@@ -163,6 +182,13 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
     @property
     def entity_picture(self) -> str | None:
         """Return the asset download URL as entity picture is unsupported."""
+        if self.asset_name == WEB_UI_ASSET_NAME and self.installed_version:
+            # Since ESP-Miner v2.15.0, the AxeOS web UI is embedded in esp-miner.bin.
+            _LOGGER.debug(
+                "Bitaxe update (%s): '%s' not in latest release — using installed version as picture",
+                self._attr_unique_id,
+                self.asset_name,
+            )
         return None
 
     async def async_install(
@@ -298,6 +324,15 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
         }
         if self._last_error is not None:
             attrs["last_install_error"] = self._last_error
+        
+        # Special handling for Web UI: since ESP-Miner v2.15.0, the web UI
+        # is embedded in esp-miner.bin and www.bin is no longer released.
+        if self.asset_name == WEB_UI_ASSET_NAME and not self._release_asset:
+            attrs["note"] = (
+                "Since ESP-Miner v2.15.0 the AxeOS web UI is embedded in the firmware "
+                "binary (esp-miner.bin). A separate www.bin is no longer provided by "
+                "the official releases. Use the firmware update instead."
+            )
         return attrs
 
     @property
