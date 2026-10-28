@@ -110,7 +110,7 @@ class BitAxeSensor(SensorEntity):
             "name": self._device_name,
             "manufacturer": "Open Source Hardware",
             "model": "BitAxe Miner",
-            "via_device": None,
+            "via_device_id": self.entry.entry_id,
         }
 
     @property
@@ -322,7 +322,7 @@ class BitaxeBenchLiveSensor(SensorEntity):
 
     @property
     def device_info(self):
-        return {"identifiers": {(DOMAIN, self.entry.entry_id)}, "name": self._device_name}
+        return {"identifiers": {(DOMAIN, self.entry.entry_id)}, "name": self._device_name, "via_device_id": self.entry.entry_id}
 
     @property
     def native_value(self):
