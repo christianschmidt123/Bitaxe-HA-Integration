@@ -120,6 +120,10 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
         release = self.release_coordinator.data or {}
         assets = _release_assets(release)
 
+        if not assets:
+            _LOGGER.warning("Bitaxe update (%s): no release assets found (GitHub Rate Limited?)", self._attr_unique_id)
+            return self.installed_version
+
         if self.asset_name not in assets:
             # Asset not in release (e.g. legacy www.bin asset is gone since ESP-Miner v2.15.0).
             return self.installed_version
