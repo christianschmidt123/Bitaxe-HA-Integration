@@ -110,7 +110,6 @@ class BitAxeSensor(SensorEntity):
             "name": self._device_name,
             "manufacturer": "Open Source Hardware",
             "model": "BitAxe Miner",
-            "via_device_id": self.entry.entry_id,
         }
 
     @property

@@ -100,7 +100,6 @@ class BitaxeUpdateEntity(CoordinatorEntity, UpdateEntity):
             "name": self.entry.data.get("device_name", "BitAxe Miner"),
             "manufacturer": "Open Source Hardware",
             "model": "BitAxe Miner",
-            "via_device_id": self.entry.entry_id,
         }
 
     @property
